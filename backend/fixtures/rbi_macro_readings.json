@@ -1,0 +1,32 @@
+[
+  {
+    "variable_name": "inflation_rate",
+    "value": 5.4,
+    "timestamp": "2026-07-01T00:00:00Z"
+  },
+  {
+    "variable_name": "repo_rate",
+    "value": 6.5,
+    "timestamp": "2026-07-01T00:00:00Z"
+  },
+  {
+    "variable_name": "fuel_price_index",
+    "value": 112.5,
+    "timestamp": "2026-07-01T00:00:00Z"
+  },
+  {
+    "variable_name": "inflation_rate",
+    "value": 5.6,
+    "timestamp": "2026-08-01T00:00:00Z"
+  },
+  {
+    "variable_name": "repo_rate",
+    "value": 6.75,
+    "timestamp": "2026-08-01T00:00:00Z"
+  },
+  {
+    "variable_name": "fuel_price_index",
+    "value": 115.0,
+    "timestamp": "2026-08-01T00:00:00Z"
+  }
+]

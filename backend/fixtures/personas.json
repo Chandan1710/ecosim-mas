@@ -1,0 +1,72 @@
+[
+  {
+    "name": "Frugal Senior",
+    "description": "Risk-averse, highly attentive to essentials, prioritizes savings.",
+    "risk_appetite": 0.1,
+    "financial_literacy": 0.8,
+    "spending_bias": 0.2
+  },
+  {
+    "name": "Aggressive Student",
+    "description": "High risk appetite, lower financial literacy, high discretionary spending bias.",
+    "risk_appetite": 0.9,
+    "financial_literacy": 0.3,
+    "spending_bias": 0.8
+  },
+  {
+    "name": "Cautious Professional",
+    "description": "Moderate risk appetite, high financial literacy, balanced spending.",
+    "risk_appetite": 0.4,
+    "financial_literacy": 0.9,
+    "spending_bias": 0.5
+  },
+  {
+    "name": "Impulse Spender",
+    "description": "Low risk appetite for investments but high discretionary spending bias.",
+    "risk_appetite": 0.3,
+    "financial_literacy": 0.4,
+    "spending_bias": 0.9
+  },
+  {
+    "name": "Optimistic Entrepreneur",
+    "description": "High risk appetite, high financial literacy, invests in growth.",
+    "risk_appetite": 0.85,
+    "financial_literacy": 0.7,
+    "spending_bias": 0.6
+  },
+  {
+    "name": "Struggling Worker",
+    "description": "Very low risk appetite, low financial literacy, low discretionary spending.",
+    "risk_appetite": 0.1,
+    "financial_literacy": 0.2,
+    "spending_bias": 0.1
+  },
+  {
+    "name": "Balanced Family",
+    "description": "Moderate risk, moderate literacy, average spending bias.",
+    "risk_appetite": 0.5,
+    "financial_literacy": 0.6,
+    "spending_bias": 0.5
+  },
+  {
+    "name": "Wealthy Retiree",
+    "description": "Low risk, high literacy, high discretionary spending capacity.",
+    "risk_appetite": 0.2,
+    "financial_literacy": 0.9,
+    "spending_bias": 0.7
+  },
+  {
+    "name": "Tech-Savvy Investor",
+    "description": "High risk, high literacy, moderate spending bias.",
+    "risk_appetite": 0.9,
+    "financial_literacy": 0.95,
+    "spending_bias": 0.4
+  },
+  {
+    "name": "Conservative Saver",
+    "description": "Very low risk, average literacy, very low spending bias.",
+    "risk_appetite": 0.05,
+    "financial_literacy": 0.5,
+    "spending_bias": 0.15
+  }
+]

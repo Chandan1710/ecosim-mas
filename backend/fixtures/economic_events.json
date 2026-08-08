@@ -1,0 +1,27 @@
+[
+  {
+    "source": "GDELT",
+    "raw_text": "Global oil prices surge by 15% due to supply chain disruptions in the Middle East.",
+    "timestamp": "2026-08-01T10:00:00Z"
+  },
+  {
+    "source": "GDELT",
+    "raw_text": "Major tech firm announces layoffs of 10,000 employees globally.",
+    "timestamp": "2026-08-02T14:30:00Z"
+  },
+  {
+    "source": "GDELT",
+    "raw_text": "New government subsidy announced for electric vehicles.",
+    "timestamp": "2026-08-03T09:15:00Z"
+  },
+  {
+    "source": "GDELT",
+    "raw_text": "Agricultural yield hits record low due to unseasonal rainfall.",
+    "timestamp": "2026-08-04T16:45:00Z"
+  },
+  {
+    "source": "GDELT",
+    "raw_text": "Trade agreement signed between India and the EU.",
+    "timestamp": "2026-08-05T11:20:00Z"
+  }
+]

@@ -1,0 +1,27 @@
+[
+  {
+    "source": "NewsAPI",
+    "raw_text": "The latest inflation numbers suggest a tightening of household budgets. Experts weigh in on the cost of living crisis.",
+    "timestamp": "2026-08-01T11:00:00Z"
+  },
+  {
+    "source": "NewsAPI",
+    "raw_text": "Tech stocks rally as positive earnings reports offset layoff fears.",
+    "timestamp": "2026-08-02T15:00:00Z"
+  },
+  {
+    "source": "NewsAPI",
+    "raw_text": "Consumers are holding back on discretionary spending as holiday season approaches.",
+    "timestamp": "2026-08-03T10:00:00Z"
+  },
+  {
+    "source": "NewsAPI",
+    "raw_text": "Food prices expected to soar following the recent poor harvest.",
+    "timestamp": "2026-08-04T17:00:00Z"
+  },
+  {
+    "source": "NewsAPI",
+    "raw_text": "Economists predict a steady GDP growth fueled by new trade pacts.",
+    "timestamp": "2026-08-05T12:00:00Z"
+  }
+]
