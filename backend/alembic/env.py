@@ -16,11 +16,11 @@ if config.config_file_name is not None:
 
 import sys
 import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from backend.models.personas import Persona
-from backend.models.scenarios import Scenario
-from backend.models.events import Event
-from backend.db.base_class import Base
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from models.personas import Persona
+from models.scenarios import Scenario
+from models.events import Event
+from db.base_class import Base
 
 target_metadata = Base.metadata
 

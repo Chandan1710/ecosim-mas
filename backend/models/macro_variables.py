@@ -1,5 +1,5 @@
 from sqlalchemy import Column, String, Float, DateTime
-from backend.db.base_class_ts import BaseTS
+from db.base_class_ts import BaseTS
 
 class MacroVariable(BaseTS):
     __tablename__ = "macro_variables"

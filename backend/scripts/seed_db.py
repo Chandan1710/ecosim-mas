@@ -2,10 +2,10 @@ import json
 import os
 from datetime import datetime
 
-from backend.db.session import SessionLocal, SessionLocalTS
-from backend.models.personas import Persona
-from backend.models.events import Event
-from backend.models.macro_variables import MacroVariable
+from db.session import SessionLocal, SessionLocalTS
+from models.personas import Persona
+from models.events import Event
+from models.macro_variables import MacroVariable
 
 def load_json(filename):
     filepath = os.path.join(os.path.dirname(__file__), "..", "fixtures", filename)
