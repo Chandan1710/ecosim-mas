@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from models.personas import Persona
 from models.scenarios import Scenario
 from models.events import Event
+from models.causal_chains import CausalChain
 from db.base_class import Base
 
 target_metadata = Base.metadata
