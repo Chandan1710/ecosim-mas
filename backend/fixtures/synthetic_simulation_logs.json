@@ -1,0 +1,702 @@
+[
+  {
+    "macro_state": {
+      "inflation_rate": 3.32,
+      "repo_rate": 4.55,
+      "fuel_price_index": 139.22
+    },
+    "agent_state": {
+      "budget_anxiety": 0.36,
+      "essential_pressure": 0.85,
+      "liquidity": 1.0
+    },
+    "risk_score": 0.4625,
+    "failure_frontier_threshold": 0.6311
+  },
+  {
+    "macro_state": {
+      "inflation_rate": 6.82,
+      "repo_rate": 6.46,
+      "fuel_price_index": 113.25
+    },
+    "agent_state": {
+      "budget_anxiety": 0.6,
+      "essential_pressure": 0.51,
+      "liquidity": 0.43
+    },
+    "risk_score": 0.7003,
+    "failure_frontier_threshold": 0.8988
+  },
+  {
+    "macro_state": {
+      "inflation_rate": 6.76,
+      "repo_rate": 6.92,
+      "fuel_price_index": 130.96
+    },
+    "agent_state": {
+      "budget_anxiety": 0.82,
+      "essential_pressure": 0.85,
+      "liquidity": 0.14
+    },
+    "risk_score": 0.8469,
+    "failure_frontier_threshold": 1.0
+  },
+  {
+    "macro_state": {
+      "inflation_rate": 3.51,
+      "repo_rate": 6.46,
+      "fuel_price_index": 128.3
+    },
+    "agent_state": {
+      "budget_anxiety": 0.8,
+      "essential_pressure": 0.58,
+      "liquidity": 0.83
+    },
+    "risk_score": 0.602,
+    "failure_frontier_threshold": 0.6562
+  },
+  {
+    "macro_state": {
+      "inflation_rate": 7.29,
+      "repo_rate": 5.65,
+      "fuel_price_index": 111.67
+    },
+    "agent_state": {
+      "budget_anxiety": 0.54,
+      "essential_pressure": 0.69,
+      "liquidity": 0.12
+    },
+    "risk_score": 0.7679,
+    "failure_frontier_threshold": 0.866
+  },
+  {
+    "macro_state": {
+      "inflation_rate": 7.82,
+      "repo_rate": 5.53,
+      "fuel_price_index": 126.86
+    },
+    "agent_state": {
+      "budget_anxiety": 0.96,
+      "essential_pressure": 0.14,
+      "liquidity": 0.0
+    },
+    "risk_score": 0.7932,
+    "failure_frontier_threshold": 0.9499
+  },
+  {
+    "macro_state": {
+      "inflation_rate": 5.04,
+      "repo_rate": 4.93,
+      "fuel_price_index": 104.53
+    },
+    "agent_state": {
+      "budget_anxiety": 0.63,
+      "essential_pressure": 0.42,
+      "liquidity": 0.37
+    },
+    "risk_score": 0.6098,
+    "failure_frontier_threshold": 0.804
+  },
+  {
+    "macro_state": {
+      "inflation_rate": 7.67,
+      "repo_rate": 4.65,
+      "fuel_price_index": 111.57
+    },
+    "agent_state": {
+      "budget_anxiety": 0.84,
+      "essential_pressure": 0.54,
+      "liquidity": 0.57
+    },
+    "risk_score": 0.7334,
+    "failure_frontier_threshold": 0.9277
+  },
+  {
+    "macro_state": {
+      "inflation_rate": 6.69,
+      "repo_rate": 6.98,
+      "fuel_price_index": 115.83
+    },
+    "agent_state": {
+      "budget_anxiety": 0.21,
+      "essential_pressure": 0.13,
+      "liquidity": 0.73
+    },
+    "risk_score": 0.4647,
+    "failure_frontier_threshold": 0.5706
+  },
+  {
+    "macro_state": {
+      "inflation_rate": 5.93,
+      "repo_rate": 5.6,
+      "fuel_price_index": 118.84
+    },
+    "agent_state": {
+      "budget_anxiety": 0.65,
+      "essential_pressure": 0.2,
+      "liquidity": 0.47
+    },
+    "risk_score": 0.6409,
+    "failure_frontier_threshold": 0.7086
+  },
+  {
+    "macro_state": {
+      "inflation_rate": 7.03,
+      "repo_rate": 5.98,
+      "fuel_price_index": 120.07
+    },
+    "agent_state": {
+      "budget_anxiety": 0.4,
+      "essential_pressure": 0.22,
+      "liquidity": 0.17
+    },
+    "risk_score": 0.6487,
+    "failure_frontier_threshold": 0.8042
+  },
+  {
+    "macro_state": {
+      "inflation_rate": 6.76,
+      "repo_rate": 6.98,
+      "fuel_price_index": 125.47
+    },
+    "agent_state": {
+      "budget_anxiety": 0.55,
+      "essential_pressure": 0.94,
+      "liquidity": 0.78
+    },
+    "risk_score": 0.6018,
+    "failure_frontier_threshold": 0.6755
+  },
+  {
+    "macro_state": {
+      "inflation_rate": 4.46,
+      "repo_rate": 5.74,
+      "fuel_price_index": 137.15
+    },
+    "agent_state": {
+      "budget_anxiety": 0.78,
+      "essential_pressure": 0.92,
+      "liquidity": 0.97
+    },
+    "risk_score": 0.6069,
+    "failure_frontier_threshold": 0.7326
+  },
+  {
+    "macro_state": {
+      "inflation_rate": 7.88,
+      "repo_rate": 4.19,
+      "fuel_price_index": 129.35
+    },
+    "agent_state": {
+      "budget_anxiety": 0.28,
+      "essential_pressure": 0.34,
+      "liquidity": 0.9
+    },
+    "risk_score": 0.476,
+    "failure_frontier_threshold": 0.6596
+  },
+  {
+    "macro_state": {
+      "inflation_rate": 5.82,
+      "repo_rate": 7.4,
+      "fuel_price_index": 117.94
+    },
+    "agent_state": {
+      "budget_anxiety": 0.93,
+      "essential_pressure": 0.98,
+      "liquidity": 0.75
+    },
+    "risk_score": 0.7498,
+    "failure_frontier_threshold": 0.9132
+  },
+  {
+    "macro_state": {
+      "inflation_rate": 8.26,
+      "repo_rate": 7.05,
+      "fuel_price_index": 116.99
+    },
+    "agent_state": {
+      "budget_anxiety": 0.66,
+      "essential_pressure": 0.11,
+      "liquidity": 0.09
+    },
+    "risk_score": 0.722,
+    "failure_frontier_threshold": 0.9061
+  },
+  {
+    "macro_state": {
+      "inflation_rate": 8.03,
+      "repo_rate": 6.93,
+      "fuel_price_index": 132.99
+    },
+    "agent_state": {
+      "budget_anxiety": 0.26,
+      "essential_pressure": 0.63,
+      "liquidity": 0.03
+    },
+    "risk_score": 0.663,
+    "failure_frontier_threshold": 0.8493
+  },
+  {
+    "macro_state": {
+      "inflation_rate": 3.75,
+      "repo_rate": 5.73,
+      "fuel_price_index": 96.78
+    },
+    "agent_state": {
+      "budget_anxiety": 0.53,
+      "essential_pressure": 0.31,
+      "liquidity": 0.53
+    },
+    "risk_score": 0.5068,
+    "failure_frontier_threshold": 0.6824
+  },
+  {
+    "macro_state": {
+      "inflation_rate": 3.63,
+      "repo_rate": 6.86,
+      "fuel_price_index": 109.42
+    },
+    "agent_state": {
+      "budget_anxiety": 0.15,
+      "essential_pressure": 0.4,
+      "liquidity": 0.12
+    },
+    "risk_score": 0.5211,
+    "failure_frontier_threshold": 0.6742
+  },
+  {
+    "macro_state": {
+      "inflation_rate": 5.64,
+      "repo_rate": 4.49,
+      "fuel_price_index": 95.31
+    },
+    "agent_state": {
+      "budget_anxiety": 0.44,
+      "essential_pressure": 0.46,
+      "liquidity": 0.87
+    },
+    "risk_score": 0.5046,
+    "failure_frontier_threshold": 0.6007
+  },
+  {
+    "macro_state": {
+      "inflation_rate": 6.21,
+      "repo_rate": 5.31,
+      "fuel_price_index": 120.6
+    },
+    "agent_state": {
+      "budget_anxiety": 0.41,
+      "essential_pressure": 0.49,
+      "liquidity": 0.26
+    },
+    "risk_score": 0.5751,
+    "failure_frontier_threshold": 0.7046
+  },
+  {
+    "macro_state": {
+      "inflation_rate": 8.09,
+      "repo_rate": 4.44,
+      "fuel_price_index": 91.12
+    },
+    "agent_state": {
+      "budget_anxiety": 0.29,
+      "essential_pressure": 0.81,
+      "liquidity": 0.86
+    },
+    "risk_score": 0.4509,
+    "failure_frontier_threshold": 0.5983
+  },
+  {
+    "macro_state": {
+      "inflation_rate": 4.01,
+      "repo_rate": 6.41,
+      "fuel_price_index": 95.69
+    },
+    "agent_state": {
+      "budget_anxiety": 0.98,
+      "essential_pressure": 0.04,
+      "liquidity": 0.12
+    },
+    "risk_score": 0.6927,
+    "failure_frontier_threshold": 0.7971
+  },
+  {
+    "macro_state": {
+      "inflation_rate": 5.81,
+      "repo_rate": 6.76,
+      "fuel_price_index": 103.45
+    },
+    "agent_state": {
+      "budget_anxiety": 0.27,
+      "essential_pressure": 0.61,
+      "liquidity": 0.6
+    },
+    "risk_score": 0.5323,
+    "failure_frontier_threshold": 0.6164
+  },
+  {
+    "macro_state": {
+      "inflation_rate": 5.33,
+      "repo_rate": 4.52,
+      "fuel_price_index": 109.64
+    },
+    "agent_state": {
+      "budget_anxiety": 0.39,
+      "essential_pressure": 0.92,
+      "liquidity": 0.87
+    },
+    "risk_score": 0.5336,
+    "failure_frontier_threshold": 0.7208
+  },
+  {
+    "macro_state": {
+      "inflation_rate": 3.93,
+      "repo_rate": 5.64,
+      "fuel_price_index": 120.3
+    },
+    "agent_state": {
+      "budget_anxiety": 0.85,
+      "essential_pressure": 0.18,
+      "liquidity": 0.94
+    },
+    "risk_score": 0.5374,
+    "failure_frontier_threshold": 0.596
+  },
+  {
+    "macro_state": {
+      "inflation_rate": 6.46,
+      "repo_rate": 7.45,
+      "fuel_price_index": 133.31
+    },
+    "agent_state": {
+      "budget_anxiety": 0.14,
+      "essential_pressure": 0.81,
+      "liquidity": 0.42
+    },
+    "risk_score": 0.5329,
+    "failure_frontier_threshold": 0.6101
+  },
+  {
+    "macro_state": {
+      "inflation_rate": 5.63,
+      "repo_rate": 6.44,
+      "fuel_price_index": 110.37
+    },
+    "agent_state": {
+      "budget_anxiety": 0.73,
+      "essential_pressure": 0.05,
+      "liquidity": 0.55
+    },
+    "risk_score": 0.5752,
+    "failure_frontier_threshold": 0.6516
+  },
+  {
+    "macro_state": {
+      "inflation_rate": 6.98,
+      "repo_rate": 4.59,
+      "fuel_price_index": 112.64
+    },
+    "agent_state": {
+      "budget_anxiety": 0.82,
+      "essential_pressure": 0.81,
+      "liquidity": 0.73
+    },
+    "risk_score": 0.6659,
+    "failure_frontier_threshold": 0.767
+  },
+  {
+    "macro_state": {
+      "inflation_rate": 3.44,
+      "repo_rate": 7.05,
+      "fuel_price_index": 123.75
+    },
+    "agent_state": {
+      "budget_anxiety": 0.73,
+      "essential_pressure": 0.5,
+      "liquidity": 0.87
+    },
+    "risk_score": 0.5776,
+    "failure_frontier_threshold": 0.725
+  },
+  {
+    "macro_state": {
+      "inflation_rate": 4.17,
+      "repo_rate": 6.11,
+      "fuel_price_index": 106.82
+    },
+    "agent_state": {
+      "budget_anxiety": 0.97,
+      "essential_pressure": 0.27,
+      "liquidity": 0.21
+    },
+    "risk_score": 0.7348,
+    "failure_frontier_threshold": 0.884
+  },
+  {
+    "macro_state": {
+      "inflation_rate": 8.52,
+      "repo_rate": 5.85,
+      "fuel_price_index": 102.13
+    },
+    "agent_state": {
+      "budget_anxiety": 0.77,
+      "essential_pressure": 0.37,
+      "liquidity": 0.86
+    },
+    "risk_score": 0.6551,
+    "failure_frontier_threshold": 0.814
+  },
+  {
+    "macro_state": {
+      "inflation_rate": 3.61,
+      "repo_rate": 4.63,
+      "fuel_price_index": 114.8
+    },
+    "agent_state": {
+      "budget_anxiety": 0.91,
+      "essential_pressure": 0.38,
+      "liquidity": 0.59
+    },
+    "risk_score": 0.6542,
+    "failure_frontier_threshold": 0.8483
+  },
+  {
+    "macro_state": {
+      "inflation_rate": 6.06,
+      "repo_rate": 6.44,
+      "fuel_price_index": 98.92
+    },
+    "agent_state": {
+      "budget_anxiety": 0.34,
+      "essential_pressure": 0.41,
+      "liquidity": 0.7
+    },
+    "risk_score": 0.5278,
+    "failure_frontier_threshold": 0.6859
+  },
+  {
+    "macro_state": {
+      "inflation_rate": 6.73,
+      "repo_rate": 4.23,
+      "fuel_price_index": 135.15
+    },
+    "agent_state": {
+      "budget_anxiety": 0.6,
+      "essential_pressure": 0.8,
+      "liquidity": 0.87
+    },
+    "risk_score": 0.5933,
+    "failure_frontier_threshold": 0.7494
+  },
+  {
+    "macro_state": {
+      "inflation_rate": 7.97,
+      "repo_rate": 6.88,
+      "fuel_price_index": 110.04
+    },
+    "agent_state": {
+      "budget_anxiety": 0.32,
+      "essential_pressure": 0.89,
+      "liquidity": 0.87
+    },
+    "risk_score": 0.5734,
+    "failure_frontier_threshold": 0.6622
+  },
+  {
+    "macro_state": {
+      "inflation_rate": 4.86,
+      "repo_rate": 5.64,
+      "fuel_price_index": 127.94
+    },
+    "agent_state": {
+      "budget_anxiety": 0.93,
+      "essential_pressure": 0.47,
+      "liquidity": 0.08
+    },
+    "risk_score": 0.7989,
+    "failure_frontier_threshold": 0.9299
+  },
+  {
+    "macro_state": {
+      "inflation_rate": 4.25,
+      "repo_rate": 6.83,
+      "fuel_price_index": 121.49
+    },
+    "agent_state": {
+      "budget_anxiety": 0.47,
+      "essential_pressure": 0.27,
+      "liquidity": 0.34
+    },
+    "risk_score": 0.5522,
+    "failure_frontier_threshold": 0.6169
+  },
+  {
+    "macro_state": {
+      "inflation_rate": 7.58,
+      "repo_rate": 6.38,
+      "fuel_price_index": 130.52
+    },
+    "agent_state": {
+      "budget_anxiety": 0.98,
+      "essential_pressure": 0.14,
+      "liquidity": 0.93
+    },
+    "risk_score": 0.6287,
+    "failure_frontier_threshold": 0.7963
+  },
+  {
+    "macro_state": {
+      "inflation_rate": 4.42,
+      "repo_rate": 4.57,
+      "fuel_price_index": 100.61
+    },
+    "agent_state": {
+      "budget_anxiety": 0.5,
+      "essential_pressure": 0.75,
+      "liquidity": 0.43
+    },
+    "risk_score": 0.6047,
+    "failure_frontier_threshold": 0.6631
+  },
+  {
+    "macro_state": {
+      "inflation_rate": 3.49,
+      "repo_rate": 7.41,
+      "fuel_price_index": 139.45
+    },
+    "agent_state": {
+      "budget_anxiety": 0.77,
+      "essential_pressure": 0.45,
+      "liquidity": 0.48
+    },
+    "risk_score": 0.6755,
+    "failure_frontier_threshold": 0.7743
+  },
+  {
+    "macro_state": {
+      "inflation_rate": 4.84,
+      "repo_rate": 4.86,
+      "fuel_price_index": 108.75
+    },
+    "agent_state": {
+      "budget_anxiety": 0.41,
+      "essential_pressure": 0.64,
+      "liquidity": 0.5
+    },
+    "risk_score": 0.5472,
+    "failure_frontier_threshold": 0.6278
+  },
+  {
+    "macro_state": {
+      "inflation_rate": 4.94,
+      "repo_rate": 7.4,
+      "fuel_price_index": 134.61
+    },
+    "agent_state": {
+      "budget_anxiety": 0.49,
+      "essential_pressure": 0.99,
+      "liquidity": 0.54
+    },
+    "risk_score": 0.636,
+    "failure_frontier_threshold": 0.805
+  },
+  {
+    "macro_state": {
+      "inflation_rate": 6.69,
+      "repo_rate": 4.85,
+      "fuel_price_index": 103.8
+    },
+    "agent_state": {
+      "budget_anxiety": 0.17,
+      "essential_pressure": 0.73,
+      "liquidity": 0.05
+    },
+    "risk_score": 0.5604,
+    "failure_frontier_threshold": 0.6964
+  },
+  {
+    "macro_state": {
+      "inflation_rate": 4.68,
+      "repo_rate": 4.57,
+      "fuel_price_index": 117.88
+    },
+    "agent_state": {
+      "budget_anxiety": 0.17,
+      "essential_pressure": 0.82,
+      "liquidity": 0.92
+    },
+    "risk_score": 0.4472,
+    "failure_frontier_threshold": 0.6249
+  },
+  {
+    "macro_state": {
+      "inflation_rate": 4.38,
+      "repo_rate": 4.91,
+      "fuel_price_index": 117.77
+    },
+    "agent_state": {
+      "budget_anxiety": 0.17,
+      "essential_pressure": 0.35,
+      "liquidity": 0.61
+    },
+    "risk_score": 0.4375,
+    "failure_frontier_threshold": 0.5382
+  },
+  {
+    "macro_state": {
+      "inflation_rate": 8.57,
+      "repo_rate": 6.47,
+      "fuel_price_index": 113.82
+    },
+    "agent_state": {
+      "budget_anxiety": 0.89,
+      "essential_pressure": 0.13,
+      "liquidity": 0.53
+    },
+    "risk_score": 0.7148,
+    "failure_frontier_threshold": 0.8855
+  },
+  {
+    "macro_state": {
+      "inflation_rate": 8.55,
+      "repo_rate": 4.75,
+      "fuel_price_index": 138.18
+    },
+    "agent_state": {
+      "budget_anxiety": 0.76,
+      "essential_pressure": 0.57,
+      "liquidity": 0.28
+    },
+    "risk_score": 0.7584,
+    "failure_frontier_threshold": 0.8192
+  },
+  {
+    "macro_state": {
+      "inflation_rate": 4.78,
+      "repo_rate": 5.42,
+      "fuel_price_index": 103.61
+    },
+    "agent_state": {
+      "budget_anxiety": 0.88,
+      "essential_pressure": 0.91,
+      "liquidity": 0.29
+    },
+    "risk_score": 0.7333,
+    "failure_frontier_threshold": 0.8332
+  },
+  {
+    "macro_state": {
+      "inflation_rate": 8.92,
+      "repo_rate": 5.49,
+      "fuel_price_index": 110.35
+    },
+    "agent_state": {
+      "budget_anxiety": 0.32,
+      "essential_pressure": 0.49,
+      "liquidity": 0.28
+    },
+    "risk_score": 0.6867,
+    "failure_frontier_threshold": 0.8228
+  }
+]
