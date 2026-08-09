@@ -370,3 +370,220 @@ def generate_causal_chain(
         groq_api_key=groq_api_key,
     )
     return result if result is not None else _mock_causal_chain()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# MODULE 6 — Semantic-to-Numerical Mapper
+# ═══════════════════════════════════════════════════════════════════════════
+# Runs ONCE PER NODE (not per agent per tick) to convert a qualitative
+# causal-chain node into numeric deltas that seed EcoSimEnv's macro state.
+# Output schema matches §8.4 exactly.
+
+SEMANTIC_MAPPER_PROMPT = """You are the Semantic-to-Numerical Mapper for EcoSim-MAS. You convert one causal
+chain node into numeric deltas that seed the multi-agent simulation's macro
+state. You do not decide what any individual agent does — you only translate
+a qualitative event into a starting quantitative signal.
+
+Given a causal chain node and the current macro state, return JSON:
+{
+  "node_id": "matches the input node_id",
+  "deltas": {
+    "discretionary_spend_pct": "float, e.g. -0.15 for a 15% decrease",
+    "savings_rate_pct": "float",
+    "essential_cost_index_pct": "float",
+    "credit_availability_pct": "float"
+  },
+  "rationale": "one sentence explaining the mapping"
+}
+
+Rules:
+- Deltas must be directionally consistent with the node's description and
+  magnitude (major nodes should generally produce larger-magnitude deltas than
+  minor nodes, but use judgement — a "major" policy announcement can have a
+  smaller immediate numeric effect than a "moderate" supply shock).
+- All delta values must be floats in the range -1.0 to 1.0.
+- These deltas seed the environment state only. They are not final outcomes —
+  the agent policies will react to them during simulation.
+- Do not include any text outside the JSON object."""
+
+SEMANTIC_MAPPER_SCHEMA = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "semantic_mapper_response",
+        "schema": {
+            "type": "object",
+            "properties": {
+                "node_id": {"type": "integer"},
+                "deltas": {
+                    "type": "object",
+                    "properties": {
+                        "discretionary_spend_pct": {"type": "number"},
+                        "savings_rate_pct": {"type": "number"},
+                        "essential_cost_index_pct": {"type": "number"},
+                        "credit_availability_pct": {"type": "number"},
+                    },
+                    "required": [
+                        "discretionary_spend_pct",
+                        "savings_rate_pct",
+                        "essential_cost_index_pct",
+                        "credit_availability_pct",
+                    ],
+                    "additionalProperties": False,
+                },
+                "rationale": {"type": "string"},
+            },
+            "required": ["node_id", "deltas", "rationale"],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
+}
+
+# Default magnitude → scalar scale so the mock is directionally meaningful
+_MAGNITUDE_SCALE = {"major": 0.15, "moderate": 0.08, "minor": 0.03}
+
+
+def _mock_node_delta(node: dict) -> dict:
+    """Rule-based mock used when both Groq and Ollama are unavailable.
+
+    Produces directionally plausible deltas based on node category and
+    magnitude so downstream tests remain meaningful even without an LLM.
+    """
+    scale = _MAGNITUDE_SCALE.get(node.get("magnitude", "minor"), 0.03)
+    category = node.get("category", "other")
+
+    # Direction heuristics per category — conservative, not a model
+    if category == "credit":
+        deltas = {
+            "discretionary_spend_pct": -scale,
+            "savings_rate_pct": scale * 0.5,
+            "essential_cost_index_pct": 0.0,
+            "credit_availability_pct": -scale,
+        }
+    elif category == "prices":
+        deltas = {
+            "discretionary_spend_pct": -scale,
+            "savings_rate_pct": -scale * 0.3,
+            "essential_cost_index_pct": scale,
+            "credit_availability_pct": 0.0,
+        }
+    elif category == "employment":
+        deltas = {
+            "discretionary_spend_pct": -scale,
+            "savings_rate_pct": scale * 0.2,
+            "essential_cost_index_pct": 0.0,
+            "credit_availability_pct": -scale * 0.5,
+        }
+    elif category == "consumer_behaviour":
+        deltas = {
+            "discretionary_spend_pct": scale * 0.4,
+            "savings_rate_pct": -scale * 0.2,
+            "essential_cost_index_pct": 0.0,
+            "credit_availability_pct": 0.0,
+        }
+    elif category == "policy":
+        deltas = {
+            "discretionary_spend_pct": -scale * 0.5,
+            "savings_rate_pct": scale * 0.3,
+            "essential_cost_index_pct": 0.0,
+            "credit_availability_pct": -scale * 0.6,
+        }
+    else:  # trade / other
+        deltas = {
+            "discretionary_spend_pct": -scale * 0.3,
+            "savings_rate_pct": 0.0,
+            "essential_cost_index_pct": scale * 0.3,
+            "credit_availability_pct": 0.0,
+        }
+
+    return {
+        "node_id": node["node_id"],
+        "deltas": deltas,
+        "rationale": f"Mock mapping for {category} node at {node.get('magnitude', 'minor')} magnitude.",
+    }
+
+
+def _parse_mapper_content(content: str) -> dict:
+    """Parse raw JSON from the mapper LLM call."""
+    return json.loads(content)
+
+
+def _call_ollama_mapper(system_prompt: str, user_content: str) -> dict:
+    """Call Ollama for the semantic mapper; returns the parsed delta dict."""
+    logger.warning(
+        "FALLBACK: Groq failed on semantic mapper — calling Ollama (%s at %s). "
+        "This is a reliability event worth tracking.",
+        OLLAMA_MODEL, OLLAMA_BASE_URL,
+    )
+    payload = {
+        "model": OLLAMA_MODEL,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_content},
+        ],
+        "stream": False,
+        "format": "json",
+    }
+    with httpx.Client(timeout=60) as client:
+        resp = client.post(f"{OLLAMA_BASE_URL}/api/chat", json=payload)
+        resp.raise_for_status()
+    content = resp.json()["message"]["content"]
+    return _parse_mapper_content(content)
+
+
+def map_node_to_deltas(
+    node: dict,
+    macro_state: Optional[dict] = None,
+    date_override: Optional[str] = None,
+    location_override: Optional[str] = None,
+) -> dict:
+    """
+    Convert ONE causal chain node into numeric deltas per §8.4.
+
+    Parameters
+    ----------
+    node : dict
+        A single causal chain node dict with at minimum:
+          node_id, description, magnitude, category, depends_on, confidence
+    macro_state : dict, optional
+        Current macro state e.g.
+          {"inflation_rate": 5.5, "repo_rate": 6.5, "fuel_price_index": 110.0}
+        Included in the prompt so the LLM can calibrate delta magnitudes.
+    date_override : str, optional
+    location_override : str, optional
+
+    Returns
+    -------
+    dict with keys: node_id, deltas (dict of four floats), rationale (str)
+    """
+    groq_api_key = os.getenv("GROQ_API_KEY")
+    grounding = build_grounding_block(date_override, location_override)
+
+    macro_snippet = ""
+    if macro_state:
+        macro_snippet = (
+            "\nCurrent macro state:\n"
+            + "\n".join(f"  {k}: {v}" for k, v in macro_state.items())
+        )
+
+    user_content = (
+        f"Causal chain node:\n"
+        f"  node_id: {node['node_id']}\n"
+        f"  description: {node['description']}\n"
+        f"  magnitude: {node['magnitude']}\n"
+        f"  category: {node['category']}\n"
+        f"  confidence: {node['confidence']}"
+        + macro_snippet
+    )
+
+    system_prompt = f"{grounding}\n\n{SEMANTIC_MAPPER_PROMPT}"
+
+    result = _call_groq_with_fallback(
+        system_prompt=system_prompt,
+        user_content=user_content,
+        response_format=SEMANTIC_MAPPER_SCHEMA,
+        parse_fn=_parse_mapper_content,
+        ollama_fallback_fn=_call_ollama_mapper,
+        groq_api_key=groq_api_key,
+    )
+    return result if result is not None else _mock_node_delta(node)

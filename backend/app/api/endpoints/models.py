@@ -52,3 +52,28 @@ class CausalChainResponse(BaseModel):
     scenario_id: int
     chain_id: int
     chain: List[CausalNode] = Field(..., min_length=10, max_length=15)
+
+
+# ── Semantic-to-Numerical Mapper models (module 6) ───────────────────────────
+
+class NodeDeltas(BaseModel):
+    """The four numeric deltas produced by the Semantic-to-Numerical Mapper for one node."""
+    discretionary_spend_pct: float
+    savings_rate_pct: float
+    essential_cost_index_pct: float
+    credit_availability_pct: float
+
+
+class NodeDeltaResult(BaseModel):
+    """Mapper output for a single causal chain node (§8.4 schema)."""
+    node_id: int
+    deltas: NodeDeltas
+    rationale: str
+
+
+class MapChainResponse(BaseModel):
+    """Response body for POST /scenarios/{id}/causal-chain/map."""
+    scenario_id: int
+    chain_id: int
+    mapped_nodes: List[NodeDeltaResult]
+
