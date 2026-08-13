@@ -179,9 +179,17 @@ This is the part most student projects fake with a persona string. Here's the ho
 A full open-world simulation (malls, theaters, homes, all modelled and populated) is a multi-year game-studio scope, not a semester deliverable. This is the honest, buildable version that still reads as "a living world" in a demo:
 
 - **Zone-based world, not an open world.** Six fixed Location nodes — Home, Workplace, Mall, Café, Theater, Grocery — each a simplified low-poly building on a compact 3D map (a diorama, not an explorable city). Rendered with **React Three Fiber**, added to the existing React + Vite frontend as a new dependency, not a new framework.
-- **Agents are Mixamo-rigged low-poly humanoids** (free, rigged, pre-animated — see the build brief in §9.2), one per persona, positioned at their current zone. When a tick changes an agent's target zone, play the "walk" clip and tween position over ~1.5s; play "idle" otherwise. This is what makes the interaction visible — ten figures moving between six buildings as the simulation ticks.
+- **Agents share ONE plain, transparent wireframe humanoid mesh** (a single free rigged model from Mixamo, pre-animated — build brief in §9.2), instanced ten times, one per persona. Deliberately not visually distinct per persona — different bodies would wrongly imply something about the *persona's appearance*, when what actually differs is the policy behind it. Each instance is rendered wireframe/translucent (a Three.js material setting, not a Mixamo/Blender concern) and labelled with a small floating nameplate (persona name) above the head — that's how you tell agents apart, not by build or outfit. When a tick changes an agent's target zone, play the "walk" clip and tween position over ~1.5s; play "idle" otherwise. This is what makes the interaction visible — ten identical wireframe figures, each labelled, moving between six buildings as the simulation ticks.
 - **Needs state decides *which* zone; the RL policy still decides *how much* gets spent there.** A small rule-based state machine (budget_anxiety, essential_pressure, discretionary_appetite — full logic in §9.3) sits between the RL policy's Spend/Save/Default output and the 3D scene's zone assignment. This is deliberately not a second RL policy — keep it simple and inspectable.
-- **Optional flavor text**, one LLM call per agent per tick generating a short third-person rationale ("Priya skipped her usual coffee run — tightening up after the fuel shock") shown next to the 3D scene. This is what reads as "thinking" to a viewer without claiming general intelligence — prompt in §8.5.
+### 7.5 Peer influence — how agents actually affect each other
+
+You referenced *Generative Agents: Interactive Simulacra of Human Behavior* (Park et al., UIST 2023 — already cited in your literature survey, Cluster 1 item 2). Full parity with that paper — importance-weighted memory retrieval, hierarchical daily-plan reflection, free-form emergent dialogue between agents — is a research system built by a team over months, not a bolt-on. What's genuinely buildable, and gets you the thing you actually asked for (agents that nudge each other's decisions, not just decide in isolation), is a bounded peer-influence layer on top of what already exists:
+
+- **Co-location trigger, not constant chatter.** Peer influence only fires when two or more agents are assigned to the *same zone on the same tick* (their zone choice already comes from the needs-state layer, §9.3) — this is naturally rare enough to be meaningful, not a background hum on every tick.
+- **Default mechanism: a cheap, rule-based needs-state nudge — not an LLM call.** When agents co-locate, each one's needs-state (`budget_anxiety`, `discretionary_appetite`) is nudged based on what the *other* agent's most recent action was — seeing a peer who just Defaulted nudges `budget_anxiety` up; seeing a peer who just Spent freely at the Mall nudges `discretionary_appetite` up. This is exactly the "influence acts on other agents" behaviour you asked for, and it's transparent and inspectable (same philosophy as the reward function in §7.2) rather than another opaque model. Tune the nudge magnitude per persona's `financial_literacy` — more literate agents should be less swayed by a single peer's behaviour, which is realistic and also keeps the effect bounded rather than runaway.
+- **Optional narrative layer: extend the Agent Narrator (§8.5) to co-located pairs.** When two agents share a zone, one additional LLM call (not per-agent, per *pair*, so it stays rare) can generate a one-line exchange — "Priya mentions her rent's due; Rahul decides to skip his coffee run too." This is flavor text for the 3D scene, shown as a subtle interaction cue near the two figures — it does not itself drive behaviour (the rule-based nudge already did that); it just narrates what the nudge looked like. Prompt in §8.6.
+- **This already partially flows through episodic memory (§7.3) for free.** A peer's action, once it nudges an agent's needs-state, becomes part of that agent's own event context for the tick — which gets stored via `store_episode()` (module 7) same as any other event. So a past peer interaction is retrievable later as episodic memory without any new infrastructure — the memory system you already built supports this naturally.
+- **What this deliberately does NOT do:** agents don't hold multi-turn conversations, don't form or query a "who do I trust" model of other agents, and don't propagate influence transitively beyond the tick it happens on (no simulated rumor-spreading network). Those are the pieces that would make this a research-paper-scale system rather than a semester project — name them as explicit future work in your report rather than attempting them.
 
 ---
 
@@ -316,6 +324,24 @@ Return JSON:
 { "agent_id": "...", "rationale": "one sentence, under 20 words" }
 ```
 
+### 8.6 Peer Interaction Narrator (co-located agent pairs, §7.5)
+
+```
+You are the Peer Interaction Narrator for EcoSim-MAS. Two agents are
+co-located in the same zone this tick. Given both agents' personas, their
+most recent actions, and the needs-state nudge that just occurred between
+them, write exactly one short sentence (under 25 words) narrating what
+their exchange looked like, in third person.
+
+This is flavor text for a 3D scene, not a driver of behaviour — the
+numeric nudge has already been applied. Do not invent facts about either
+agent's life beyond their given persona and state. Do not use exclamation
+marks or dramatic language.
+
+Return JSON:
+{ "agent_a_id": "...", "agent_b_id": "...", "narration": "one sentence, under 25 words" }
+```
+
 ---
 
 ## 9. Build briefs — paste directly into Antigravity or Codex
@@ -333,19 +359,42 @@ Requirements:
   Café, Theater, Grocery. Each zone is a simplified low-poly building (a
   colored box/prism with a roof, no more than ~500 triangles) at a fixed
   (x, z) coordinate on the map, spaced at least 8 units apart.
-- Load 10 agent avatars as glTF models exported from Mixamo (rigged, ~2000
-  triangles, walk/idle animations included). Import via @react-three/drei's
-  useGLTF and useAnimations hooks.
+- Load ONE shared glTF model exported from Mixamo (rigged, ~2000 triangles,
+  walk/idle/sit/defeated animations included — see §9.2). Instance it 10
+  times, once per agent, using @react-three/drei's useGLTF and
+  useAnimations hooks. Do NOT load 10 different character models — same
+  mesh, same skeleton, for every agent.
+- Render each instance with a wireframe or translucent material (e.g.
+  MeshBasicMaterial with wireframe: true, or a low-opacity standard
+  material) — a plain, transparent body, not a fleshed-out character. This
+  is a rendering-time material override, independent of the source mesh.
+- Attach a small floating text label (persona name, via @react-three/drei's
+  Html or Text component) above each agent's head — this is how the viewer
+  tells agents apart, not by body shape or outfit.
 - Each agent's position updates on every simulation tick received over the
-  WebSocket connection. When an agent's target zone changes, play the "walk"
-  animation clip and tween position from its current zone anchor to the new
-  one over ~1.5 seconds; play "idle" when stationary.
+  WebSocket connection (see the tick payload shape in module 9's
+  simulate.py — agent_actions[agent_id].action_type). Map action_type to
+  animation clip:
+    - 0 (Spend)   → play "walk" toward the target zone (Mall/Café/Theater,
+                    chosen by the needs-state layer, §9.3), then "idle" on
+                    arrival. The zone visit itself communicates spending —
+                    no separate spending gesture needed.
+    - 1 (Save)    → play "walk" to Home if not already there, then "sit".
+                    Staying in and sitting reads as cautious/saving.
+    - 2 (Default) → play "defeated" in place and stop moving — the agent
+                    is terminated in the environment on this tick, so it
+                    should visibly freeze in the distress pose rather than
+                    continue to any zone.
+  When no action has changed the agent's state this tick, hold whatever
+  clip is currently playing rather than resetting to "idle" every frame.
 - Camera: fixed isometric-style orbit camera (OrbitControls, restricted polar
   angle so the user can't go under the ground plane), default framing the
   whole 6-zone map.
 - Materials: flat shaded, no gradients, no PBR metalness/roughness maps —
   solid colors matching the design system's neutral + one accent palette
-  (see the frontend design system brief).
+  (see the frontend design system brief). The wireframe/translucent agent
+  material and the flat zone-building materials should read as one
+  consistent, minimal style.
 - Performance target: 10 animated agents + 6 static buildings at 60fps on
   integrated graphics — keep total triangle count under 50k; instance any
   geometry (trees, benches) that repeats more than a few times.
@@ -354,29 +403,35 @@ Requirements:
   world.
 ```
 
-### 9.2 Mixamo character pipeline
+### 9.2 Mixamo character pipeline (single shared mesh)
 
 ```
 Set up the character asset pipeline for EcoSim-MAS's 3D scene.
 
-1. Source 10 base characters from Mixamo (mixamo.com, free Adobe account),
-   choosing simple, low-poly-adjacent characters to keep triangle counts
-   down. Assign one character per persona archetype for visual variety
-   (e.g. different clothing colors) — do not attempt fully custom character
-   art.
-2. Animations needed per character, downloaded "without skin" and applied to
-   each base mesh: Idle, Walking, Sitting (for Home/Theater zones), Talking
-   (optional flavor when two agents share a zone).
-3. Export each as glTF (.glb) via Mixamo → Blender → glTF export (Mixamo
-   doesn't export glTF directly — use Blender's built-in glTF exporter or a
-   community mixamo-to-glb script) so files load natively in three.js without
-   a runtime FBX loader.
-4. Store exported .glb files in /frontend/public/models/agents/, one file per
-   persona, under 2MB each (Draco-compress geometry via gltf-transform if
-   needed).
-5. Naming convention: {persona_slug}.glb, e.g. frugal_senior.glb — must match
-   the persona IDs already defined in the Postgres persona table so the
-   frontend can look up the right model by ID.
+Agents are deliberately NOT visually distinct — one shared plain mesh
+represents all 10 personas, differentiated by a floating name label and
+by behaviour, not appearance. This means only ONE character needs sourcing,
+not ten.
+
+1. Source ONE simple base character from Mixamo (mixamo.com, free Adobe
+   account) — a plain default rig such as Mixamo's own "X Bot" or "Y Bot"
+   is a good fit, since it's already neutral and low-poly. Appearance
+   doesn't matter beyond "simple humanoid" — it will be rendered as a
+   wireframe/translucent material at runtime regardless of source look.
+2. Animations needed, downloaded "without skin" against that same base
+   character: Idle, Walking, Sitting (for Home/Theater zones and the Save
+   action), Defeated (for the Default action — a slumped, distressed pose
+   the agent freezes in when terminated by the environment).
+3. Export as ONE glTF (.glb) via Mixamo → Blender → glTF export (Mixamo
+   doesn't export glTF directly — import the base FBX + all animation FBXs
+   into Blender, then use Blender's built-in glTF 2.0 exporter to produce
+   a single .glb with all animation clips embedded) so it loads natively in
+   three.js without a runtime FBX loader.
+4. Store the exported file at /frontend/public/models/agents/agent_base.glb,
+   under 2MB (Draco-compress geometry via gltf-transform if needed).
+5. The frontend instances this single file 10 times (§9.1) and pairs each
+   instance with a persona_slug from the Postgres persona table purely for
+   the floating name label — the mesh itself carries no per-persona data.
 ```
 
 ### 9.3 Agent needs-state and zone selection
@@ -409,6 +464,36 @@ only):
 Expose the needs state and resulting zone choice on the WebSocket tick
 payload so the frontend can render a small needs readout next to each agent
 (three thin horizontal bars, no gradients, matching the design system).
+
+Peer influence (§7.5): after zone assignment, check for agents co-located
+in the same zone this tick. For each co-located pair, apply a symmetric
+needs-state nudge based on each agent's most recent action:
+- If a peer's last action was Default: nudge the other agent's
+  budget_anxiety up by a small fixed amount (e.g. +0.05), scaled down by
+  (1 - financial_literacy) — more literate agents are less swayed.
+- If a peer's last action was Spend at a discretionary zone (Mall/Café/
+  Theater): nudge the other agent's discretionary_appetite up slightly,
+  same literacy scaling.
+- If a peer's last action was Save: nudge the other agent's
+  budget_anxiety down slightly (peer caution is mildly reassuring).
+Clamp all needs values to [0, 1] after nudging. Log which pairs were
+co-located and what nudge was applied each tick — this is the one place
+in the system where one agent's behaviour numerically affects another,
+and it should be fully inspectable, not a black box.
+```
+
+### 9.3b Peer Interaction Narrator wiring (optional, §8.6)
+
+```
+For each co-located pair from §9.3's peer-influence step, optionally call
+the Peer Interaction Narrator prompt (§8.6) — reuse the existing Groq/
+Ollama/mock fallback driver from backend/app/services/llm.py, don't
+duplicate it. This should be genuinely optional/toggleable (e.g. an
+env var or query param on the simulate/start endpoint) since it adds one
+LLM call per co-located pair per tick — keep it off by default for fast
+iteration, on for the actual demo. Attach the narration string to the
+WebSocket tick payload alongside the pair's agent IDs so the frontend can
+render it as a small text bubble near the two figures in the 3D scene.
 ```
 
 ### 9.4 Frontend design system (no gradients, minimal, presentation-grade)
@@ -484,7 +569,7 @@ You're building this alone, so drop the multi-owner framing — one module at a 
 | 7 | Qdrant episodic memory integration | No (self-hosted) |
 | 8 | LightGBM + temporal model training on simulation logs | No |
 | 9 | FastAPI endpoints + WebSocket streaming | No |
-| 10 | Mixamo character pipeline (§9.2) | No (free Adobe account, one-time asset export) |
+| 10 | Mixamo character pipeline — ONE shared mesh, not 10 (§9.2) | No (free Adobe account, one-time asset export) |
 | 11 | 3D world scene + needs-state zone logic (§9.1, §9.3) | No |
 | 12 | React dashboard: design system, Scenario Parser confirmation card, Validation Mode tab (§9.4) | No |
 | 13 | Swap fixtures for live GDELT/NewsAPI/RBI/Groq calls | Yes — all of them |
