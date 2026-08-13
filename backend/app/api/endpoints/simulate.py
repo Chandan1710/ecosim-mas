@@ -52,8 +52,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # ── In-memory run registry (scope limit: single-process only) ─────────────────
-# Maps run_id → EcoSimEnv (prepared but not yet reset)
-ACTIVE_RUNS: Dict[str, EcoSimEnv] = {}
+# Maps run_id → dict containing {"env": EcoSimEnv, "base_essential_pressure": float}
+ACTIVE_RUNS: Dict[str, dict] = {}
 
 _TICK_DELAY_SECONDS = 0.01   # yield between ticks so the event loop stays responsive
 
@@ -111,6 +111,22 @@ def _build_initial_macro(mapped_nodes: list) -> Dict[str, float]:
         "repo_rate":         max(0.0, min(20.0, repo)),
         "fuel_price_index":  max(50.0, min(250.0, fuel)),
     }
+
+
+def _get_essential_pressure_from_deltas(mapped_nodes: list) -> float:
+    """
+    Extract a baseline essential_pressure [0,1] directly from the causal chain's
+    essential_cost_index_pct deltas.
+    """
+    total_essential = 0.0
+    for node in mapped_nodes:
+        deltas = node.get("deltas", {}) if isinstance(node, dict) else node.deltas
+        if isinstance(deltas, dict):
+            total_essential += deltas.get("essential_cost_index_pct", 0.0)
+        else:
+            total_essential += getattr(deltas, "essential_cost_index_pct", 0.0)
+    # Start around 0.5; e.g. +10% cost index -> 0.6 pressure
+    return max(0.0, min(1.0, 0.5 + total_essential))
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -176,9 +192,13 @@ async def start_simulation(scenario_id: int):
         )
 
     env = EcoSimEnv(personas=personas, initial_macro=initial_macro, max_steps=30)
+    base_essential_pressure = _get_essential_pressure_from_deltas(chain_record.chain)
 
     run_id = str(uuid.uuid4())
-    ACTIVE_RUNS[run_id] = env
+    ACTIVE_RUNS[run_id] = {
+        "env": env,
+        "base_essential_pressure": base_essential_pressure,
+    }
 
     return SimulateStartResponse(
         run_id=run_id,
@@ -214,8 +234,27 @@ async def simulate_ws(websocket: WebSocket, run_id: str):
         await websocket.close(code=4404, reason=f"Run {run_id} not found")
         return
 
-    env = ACTIVE_RUNS.pop(run_id)   # take ownership; allows GC after run
+    run_state = ACTIVE_RUNS.pop(run_id)   # take ownership; allows GC after run
+    env = run_state["env"]
+    base_essential_pressure = run_state["base_essential_pressure"]
+    
     await websocket.accept()
+
+    # Initialize post-processing state per agent (needs state, zones)
+    agent_states = {}
+    for aid in env.possible_agents:
+        persona = env._personas.get(aid)
+        fin_lit = persona.financial_literacy if persona else 0.5
+        bias = persona.spending_bias if persona else 0.5
+        agent_states[aid] = {
+            "budget_anxiety": 0.5,
+            "essential_pressure": base_essential_pressure,
+            "discretionary_appetite": 0.5 * bias,
+            "zone": "Home",
+            "zone_history": [],
+            "financial_literacy": fin_lit,
+            "spending_bias": bias,
+        }
 
     try:
         observations, _ = env.reset()
@@ -233,14 +272,109 @@ async def simulate_ws(websocket: WebSocket, run_id: str):
             # ── 2. Step the environment ──────────────────────────────────────
             observations, rewards, terminations, truncations, infos = env.step(actions)
 
+            # ── 2a. Needs State Update (Post-processing layer, §9.3) ─────────
+            for aid, action in actions.items():
+                state = agent_states[aid]
+                a_type, a_mag = action
+                mag = float(a_mag[0])
+                
+                # Update budget_anxiety based on action and current liquidity
+                liquidity = infos.get(aid, {}).get("liquidity", 1.0)
+                if mag > 0.3 and liquidity < 0.3:
+                    state["budget_anxiety"] = min(1.0, state["budget_anxiety"] + 0.1)
+                else:
+                    state["budget_anxiety"] = max(0.0, state["budget_anxiety"] - 0.02)
+                
+                # Update discretionary_appetite (inverse of anxiety, modulated by bias)
+                state["discretionary_appetite"] = max(0.0, min(1.0, (1.0 - state["budget_anxiety"]) * state["spending_bias"]))
+
+            # ── 2b. Zone Assignment (§9.3) ───────────────────────────────────
+            for aid in actions.keys():
+                state = agent_states[aid]
+                
+                if state["essential_pressure"] > 0.7:
+                    new_zone = "Grocery"
+                elif state["budget_anxiety"] > 0.7:
+                    new_zone = "Home"
+                elif state["discretionary_appetite"] > 0.6 and state["budget_anxiety"] < 0.4:
+                    candidates = ["Mall", "Café", "Theater"]
+                    recent = state["zone_history"][-3:]
+                    available = [c for c in candidates if c not in recent]
+                    new_zone = available[0] if available else candidates[0]
+                else:
+                    new_zone = "Workplace" if tick % 2 == 0 else "Home"
+                
+                state["zone"] = new_zone
+                state["zone_history"].append(new_zone)
+                if len(state["zone_history"]) > 5:
+                    state["zone_history"].pop(0)
+
+            # ── 2c. Co-location & Peer Influence Nudge (§7.5) ────────────────
+            zone_to_agents = {}
+            for aid in actions.keys():
+                z = agent_states[aid]["zone"]
+                zone_to_agents.setdefault(z, []).append(aid)
+            
+            co_located_pairs = []
+            for z, agents_in_zone in zone_to_agents.items():
+                if len(agents_in_zone) < 2:
+                    continue
+                # For simplicity, pairwise influence for all unique pairs in zone
+                for i in range(len(agents_in_zone)):
+                    for j in range(i + 1, len(agents_in_zone)):
+                        a1, a2 = agents_in_zone[i], agents_in_zone[j]
+                        s1, s2 = agent_states[a1], agent_states[a2]
+                        act1 = int(actions[a1][0])
+                        act2 = int(actions[a2][0])
+                        
+                        # a1 influences a2
+                        nudge_1_on_2 = 0.0
+                        if act1 == 2: # Default raises anxiety
+                            s2["budget_anxiety"] += 0.05 * (1.0 - s2["financial_literacy"])
+                            nudge_1_on_2 = 0.05
+                        elif act1 == 0 and z in ["Mall", "Café", "Theater"]: # Discretionary spend raises appetite
+                            s2["discretionary_appetite"] += 0.05 * (1.0 - s2["financial_literacy"])
+                            nudge_1_on_2 = 0.05
+                        elif act1 == 1: # Save lowers anxiety
+                            s2["budget_anxiety"] -= 0.05 * (1.0 - s2["financial_literacy"])
+                            nudge_1_on_2 = -0.05
+                            
+                        # a2 influences a1
+                        nudge_2_on_1 = 0.0
+                        if act2 == 2:
+                            s1["budget_anxiety"] += 0.05 * (1.0 - s1["financial_literacy"])
+                            nudge_2_on_1 = 0.05
+                        elif act2 == 0 and z in ["Mall", "Café", "Theater"]:
+                            s1["discretionary_appetite"] += 0.05 * (1.0 - s1["financial_literacy"])
+                            nudge_2_on_1 = 0.05
+                        elif act2 == 1:
+                            s1["budget_anxiety"] -= 0.05 * (1.0 - s1["financial_literacy"])
+                            nudge_2_on_1 = -0.05
+                            
+                        # Clamp values
+                        s1["budget_anxiety"] = max(0.0, min(1.0, s1["budget_anxiety"]))
+                        s1["discretionary_appetite"] = max(0.0, min(1.0, s1["discretionary_appetite"]))
+                        s2["budget_anxiety"] = max(0.0, min(1.0, s2["budget_anxiety"]))
+                        s2["discretionary_appetite"] = max(0.0, min(1.0, s2["discretionary_appetite"]))
+                        
+                        co_located_pairs.append({
+                            "agent_a": a1,
+                            "agent_b": a2,
+                            "zone": z,
+                            "nudge_a_on_b": nudge_1_on_2,
+                            "nudge_b_on_a": nudge_2_on_1
+                        })
+
             # ── 3. Compute risk score (Module 8) for the current macro state ─
             macro_now = env._macro_snapshot()
+            active_aids = list(actions.keys())
+            avg_budget_anxiety = sum(agent_states[aid]["budget_anxiety"] for aid in active_aids) / len(active_aids) if active_aids else 0.5
             try:
                 risk_score = predict_risk_score(
                     macro_state=macro_now,
                     agent_state={
-                        "budget_anxiety":     0.5,   # aggregate proxy; per-agent later
-                        "essential_pressure": 0.5,
+                        "budget_anxiety":     avg_budget_anxiety,
+                        "essential_pressure": base_essential_pressure,
                         "liquidity":          0.5,
                     },
                 )
@@ -257,6 +391,17 @@ async def simulate_ws(websocket: WebSocket, run_id: str):
                     "magnitude":   float(a_mag[0]),
                     "reward":      rewards.get(aid, 0.0),
                 }
+
+            needs_state_payload = {}
+            zone_payload = {}
+            for aid in actions.keys():
+                st = agent_states[aid]
+                needs_state_payload[aid] = {
+                    "budget_anxiety": st["budget_anxiety"],
+                    "essential_pressure": st["essential_pressure"],
+                    "discretionary_appetite": st["discretionary_appetite"]
+                }
+                zone_payload[aid] = st["zone"]
 
             # ── 5. Persist episodes to Qdrant (Module 7) ─────────────────────
             event_payload = {"tick": tick, "macro": macro_now}
@@ -279,11 +424,14 @@ async def simulate_ws(websocket: WebSocket, run_id: str):
 
             # ── 6. Send tick message to the WebSocket client ──────────────────
             tick_message = {
-                "tick":          tick,
-                "agent_actions": agent_actions,
-                "macro_state":   macro_now,
-                "risk_score":    risk_score,
-                "active_agents": len(env.agents),
+                "tick":             tick,
+                "agent_actions":    agent_actions,
+                "needs_state":      needs_state_payload,
+                "zone":             zone_payload,
+                "co_located_pairs": co_located_pairs,
+                "macro_state":      macro_now,
+                "risk_score":       risk_score,
+                "active_agents":    len(actions.keys()),
             }
             await websocket.send_json(tick_message)
             await asyncio.sleep(_TICK_DELAY_SECONDS)

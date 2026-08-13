@@ -28,18 +28,14 @@ client = TestClient(app)
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
-PERSONAS_FIXTURE = [
-    {"name": "Frugal Senior",       "risk_appetite": 0.1, "financial_literacy": 0.8, "spending_bias": 0.2},
-    {"name": "Aggressive Student",  "risk_appetite": 0.9, "financial_literacy": 0.3, "spending_bias": 0.8},
-    {"name": "Cautious Professional","risk_appetite": 0.4, "financial_literacy": 0.9, "spending_bias": 0.5},
-    {"name": "Impulse Spender",     "risk_appetite": 0.3, "financial_literacy": 0.4, "spending_bias": 0.9},
-    {"name": "Debt Avoider",        "risk_appetite": 0.2, "financial_literacy": 0.7, "spending_bias": 0.3},
-    {"name": "Gig Worker",          "risk_appetite": 0.6, "financial_literacy": 0.5, "spending_bias": 0.6},
-    {"name": "Rural Farmer",        "risk_appetite": 0.5, "financial_literacy": 0.3, "spending_bias": 0.4},
-    {"name": "Urban Middle Class",  "risk_appetite": 0.5, "financial_literacy": 0.6, "spending_bias": 0.5},
-    {"name": "Retiree",             "risk_appetite": 0.2, "financial_literacy": 0.7, "spending_bias": 0.3},
-    {"name": "Young Professional",  "risk_appetite": 0.7, "financial_literacy": 0.8, "spending_bias": 0.6},
-]
+import os
+
+def _load_real_personas():
+    filepath = os.path.join(os.path.dirname(__file__), "..", "fixtures", "personas.json")
+    with open(filepath, "r") as f:
+        return json.load(f)
+
+PERSONAS_FIXTURE = _load_real_personas()
 
 MOCK_CHAIN = [
     {
@@ -151,6 +147,9 @@ def test_simulation_run_streams_ticks():
         # Required top-level keys
         assert "tick" in msg,          f"tick {i}: missing 'tick'"
         assert "agent_actions" in msg, f"tick {i}: missing 'agent_actions'"
+        assert "needs_state" in msg,   f"tick {i}: missing 'needs_state'"
+        assert "zone" in msg,          f"tick {i}: missing 'zone'"
+        assert "co_located_pairs" in msg, f"tick {i}: missing 'co_located_pairs'"
         assert "macro_state" in msg,   f"tick {i}: missing 'macro_state'"
         assert "risk_score" in msg,    f"tick {i}: missing 'risk_score'"
         assert "active_agents" in msg, f"tick {i}: missing 'active_agents'"
@@ -169,6 +168,13 @@ def test_simulation_run_streams_ticks():
             assert "action_type" in action_data, f"tick {i} agent {agent_id}: missing action_type"
             assert "magnitude"   in action_data, f"tick {i} agent {agent_id}: missing magnitude"
             assert "reward"      in action_data, f"tick {i} agent {agent_id}: missing reward"
+            
+            # Check needs_state and zone
+            assert agent_id in msg["needs_state"]
+            assert "budget_anxiety" in msg["needs_state"][agent_id]
+            assert agent_id in msg["zone"]
+
+        assert isinstance(msg["co_located_pairs"], list)
 
         # tick counter is non-negative
         assert msg["tick"] >= 0, f"tick {i}: negative tick counter"
@@ -236,3 +242,78 @@ def test_websocket_returns_404_for_unknown_run():
         with client.websocket_connect("/ws/simulate/nonexistent-run-id"):
             pass   # server should reject before we send/receive anything
     assert exc_info.value.code == 4404
+
+
+def test_peer_influence_nudge():
+    """
+    Force a short simulation run where we manually assign two agents to the same zone
+    and check if the peer influence nudge actually mutates their needs state.
+    """
+    db = SessionLocal()
+    try:
+        scenario_id, chain_id = _seed_scenario_and_chain(db)
+    finally:
+        db.close()
+
+    # We will patch the action_space so that:
+    # 'frugal_senior' ALWAYS Defaults (2) -> should raise peers' anxiety
+    # 'aggressive_student' ALWAYS Saves (1) -> should lower peers' anxiety
+    # This guarantees determinism for the nudge logic.
+    def mock_action_sample(agent_id):
+        import numpy as np
+        space = MagicMock()
+        if agent_id == "frugal_senior":
+            space.sample.return_value = (2, np.array([0.5], dtype=np.float32)) # Default
+        else:
+            space.sample.return_value = (1, np.array([0.5], dtype=np.float32)) # Save
+        return space
+
+    with (
+        patch(
+            "app.api.endpoints.simulate.personas_from_db",
+            return_value=personas_from_fixtures(PERSONAS_FIXTURE),
+        ),
+        patch("app.api.endpoints.simulate.predict_risk_score", return_value=0.42),
+        patch("app.api.endpoints.simulate.store_episode", return_value=None),
+        patch("app.api.endpoints.simulate.EcoSimEnv.action_space", side_effect=mock_action_sample),
+    ):
+        start_resp = client.post(f"/scenarios/{scenario_id}/simulate/start")
+        run_id = start_resp.json()["run_id"]
+        
+        # We need to intercept the run_state to force agents into the same zone.
+        # Since ACTIVE_RUNS is global, we can just fetch it before connecting WS.
+        from app.api.endpoints.simulate import ACTIVE_RUNS
+        run_state = ACTIVE_RUNS[run_id]
+        
+        # We will mock the state before the WS connects to force high budget anxiety for both,
+        # ensuring they both deterministically go to "Home" instead of relying on default workplace.
+        # But wait, simulate_ws initializes agent_states *inside* the endpoint.
+        # So we can't pre-set it here. Instead, let's just assert that they co-locate eventually,
+        # or we patch the base_essential_pressure so they both go to Grocery!
+        run_state["base_essential_pressure"] = 0.99  # Forces all agents to Grocery on tick 0
+        
+        with client.websocket_connect(f"/ws/simulate/{run_id}") as ws:
+            # Tick 0
+            msg0 = ws.receive_json()
+            assert "co_located_pairs" in msg0
+            
+            # Find the nudge applied between frugal_senior and aggressive_student
+            pairs = msg0["co_located_pairs"]
+            found_pair = False
+            for p in pairs:
+                if (
+                    (p["agent_a"] == "frugal_senior" and p["agent_b"] == "aggressive_student") or
+                    (p["agent_a"] == "aggressive_student" and p["agent_b"] == "frugal_senior")
+                ):
+                    found_pair = True
+                    # frugal_senior Defaulted -> should raise student's anxiety (nudge > 0)
+                    # aggressive_student Saved -> should lower senior's anxiety (nudge < 0)
+                    if p["agent_a"] == "frugal_senior":
+                        assert p["nudge_a_on_b"] > 0
+                        assert p["nudge_b_on_a"] < 0
+                    else:
+                        assert p["nudge_a_on_b"] < 0
+                        assert p["nudge_b_on_a"] > 0
+                    break
+            
+            assert found_pair, "Agents did not co-locate despite default Workplace assignment."
