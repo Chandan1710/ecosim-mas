@@ -1,0 +1,125 @@
+/* ── EcoSim-MAS Design System §9.4 ─────────────────────────────────────────
+   All visual decisions live here. Components inherit these variables.
+   Rule: no per-component ad-hoc colours, no gradients, no drop shadows.
+   ─────────────────────────────────────────────────────────────────────── */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap');
+
+:root {
+  /* Palette */
+  --color-bg:       #FAFAF8;
+  --color-text:     #1A1A18;
+  --color-accent:   #2F6FED;
+  --color-border:   #E5E5E0;
+  --color-surface:  #FFFFFF;
+  --color-muted:    #6B6B68;
+
+  /* Zone building colours — flat, no gradients */
+  --zone-home:        #8B9E7E;   /* muted sage green  */
+  --zone-workplace:   #7B8FA6;   /* slate blue        */
+  --zone-mall:        #C4956A;   /* warm terracotta   */
+  --zone-cafe:        #A67B5B;   /* espresso brown    */
+  --zone-theater:     #6A7B9E;   /* dusty indigo      */
+  --zone-grocery:     #7E9E8B;   /* cool mint         */
+
+  /* Ground + sky */
+  --color-ground:   #D9D6CE;
+  --color-sky:      #EFF0F2;
+
+  /* Typography */
+  --font-family:    'Inter', system-ui, sans-serif;
+  --font-regular:   400;
+  --font-medium:    500;
+
+  /* Spacing & shape */
+  --radius:         8px;
+  --border:         1px solid var(--color-border);
+
+  /* Motion */
+  --ease-out:       200ms ease-out;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-weight: var(--font-regular);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Layout shell ─────────────────────────────────────────────────────────── */
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 24px;
+  height: 52px;
+  border-bottom: var(--border);
+  background: var(--color-bg);
+  flex-shrink: 0;
+}
+
+.app-header__wordmark {
+  font-size: 13px;
+  font-weight: var(--font-medium);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text);
+}
+
+.app-header__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-accent);
+}
+
+.app-header__subtitle {
+  font-size: 12px;
+  color: var(--color-muted);
+  margin-left: auto;
+}
+
+.app-canvas-wrap {
+  flex: 1;
+  position: relative;
+  min-height: 0;
+}
+
+/* ── Zone label overlay (HTML over canvas) ───────────────────────────────── */
+
+.zone-label {
+  font-family: var(--font-family);
+  font-size: 10px;
+  font-weight: var(--font-medium);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text);
+  background: var(--color-bg);
+  border: var(--border);
+  border-radius: var(--radius);
+  padding: 2px 6px;
+  pointer-events: none;
+  white-space: nowrap;
+}
