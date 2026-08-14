@@ -1,8 +1,11 @@
 /**
- * ZoneScene — static 3D environment (Module 11a, §9.1)
+ * ZoneScene — 3D environment with static zone buildings + agent layer
+ * (Module 11a + 11b, §9.1)
  *
  * Six fixed zone buildings on a flat ground plane.
- * No agents, no WebSocket — purely the static world geometry.
+ * Ten agent instances loaded from agent_base.glb, wireframe material,
+ * Idle animation, persona-name labels.
+ * No WebSocket connection yet — purely static scene.
  *
  * Design constraints (§9.4):
  *   - Flat shaded, no PBR maps, no gradients
@@ -10,10 +13,11 @@
  *   - Camera: isometric-style OrbitControls, restricted polar angle
  */
 
-import { useRef } from 'react'
+import { Suspense } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls, Html } from '@react-three/drei'
 import * as THREE from 'three'
+import AgentLayer from './AgentLayer'
 
 // ── Zone definitions ───────────────────────────────────────────────────────
 // Positions keep zones at least 8 units apart on the XZ plane.
@@ -179,6 +183,10 @@ export default function ZoneScene() {
       {ZONES.map(zone => (
         <Building key={zone.id} zone={zone} />
       ))}
+      {/* AgentLayer suspends while agent_base.glb loads */}
+      <Suspense fallback={null}>
+        <AgentLayer />
+      </Suspense>
       <SceneCamera />
     </Canvas>
   )
