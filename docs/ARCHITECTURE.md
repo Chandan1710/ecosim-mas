@@ -174,20 +174,22 @@ This is the part most student projects fake with a persona string. Here's the ho
 - **Working memory (Redis):** current tick's budget state, last 3 perceived events — fast, ephemeral, scoped to the current simulation run.
 - **Episodic memory (Qdrant):** at the end of every simulation run, each agent's (event, action, outcome) tuples are embedded and stored. On a *new* scenario, before the policy acts, the agent retrieves its k-nearest past situations — this is real continuous learning across runs, not just within one simulation.
 
-### 7.4 3D visualization & world model
+### 7.4 2D visualization & world model
 
-A full open-world simulation (malls, theaters, homes, all modelled and populated) is a multi-year game-studio scope, not a semester deliverable. This is the honest, buildable version that still reads as "a living world" in a demo:
+**This section replaces the earlier 3D approach.** After extensive attempts, the 3D pipeline (Mixamo → Blender/FBX2glTF → React Three Fiber SkinnedMesh instancing) hit a persistent, unresolved rendering bug across multiple debugging sessions and models — the skinned mesh would not render correctly when instanced ten times simultaneously, despite the underlying asset and every individual piece (geometry, skeleton, materials, WebSocket data pipeline) independently checking out as correct. Rather than continue sinking time into a 3D skeletal-animation bug class, the pivot below is the pragmatic, still-buildable version — closer in spirit to *Generative Agents: Interactive Simulacra of Human Behavior* (Park et al., UIST 2023)'s own 2D tile-based renderer than to a 3D scene, and it eliminates the entire bug class rather than working around it.
 
-- **Zone-based world, not an open world.** Six fixed Location nodes — Home, Workplace, Mall, Café, Theater, Grocery — each a simplified low-poly building on a compact 3D map (a diorama, not an explorable city). Rendered with **React Three Fiber**, added to the existing React + Vite frontend as a new dependency, not a new framework.
-- **Agents share ONE plain, transparent wireframe humanoid mesh** (a single free rigged model from Mixamo, pre-animated — build brief in §9.2), instanced ten times, one per persona. Deliberately not visually distinct per persona — different bodies would wrongly imply something about the *persona's appearance*, when what actually differs is the policy behind it. Each instance is rendered wireframe/translucent (a Three.js material setting, not a Mixamo/Blender concern) and labelled with a small floating nameplate (persona name) above the head — that's how you tell agents apart, not by build or outfit. When a tick changes an agent's target zone, play the "walk" clip and tween position over ~1.5s; play "idle" otherwise. This is what makes the interaction visible — ten identical wireframe figures, each labelled, moving between six buildings as the simulation ticks.
-- **Needs state decides *which* zone; the RL policy still decides *how much* gets spent there.** A small rule-based state machine (budget_anxiety, essential_pressure, discretionary_appetite — full logic in §9.3) sits between the RL policy's Spend/Save/Default output and the 3D scene's zone assignment. This is deliberately not a second RL policy — keep it simple and inspectable.
+- **Top-down 2D scene, rendered on HTML5 Canvas** (or a lightweight 2D library if useful later — PixiJS — but plain Canvas 2D is the default: zero new heavy dependencies, no skeletal animation, nothing that can fail the way SkinnedMesh instancing did). Added to the existing React + Vite frontend.
+- **Six fixed zone tiles** — Home, Workplace, Mall, Café, Theater, Grocery — simple flat-colored rectangles/rounded-rects on the canvas, each labelled, laid out in roughly the same relative arrangement as the old 3D scene (positions can be reused as 2D x/y coordinates directly).
+- **Agents share ONE simple visual representation** — a small flat-colored circle or dot (no mesh, no skeleton, no per-persona visual distinction, same reasoning as before: different looks would wrongly imply something about the *persona's appearance* rather than the policy behind it), labelled with the persona's name. Distinguish an agent's current action via a simple visual state, not animation frames: e.g. a subtle color/border change or icon swap for Spend / Save / Default, rather than a walk-cycle. Movement between zones can be a straightforward tween of the (x, y) position over ~1s — no animation clips, no bone transforms, nothing that can silently fail to render.
+- **Needs state decides *which* zone; the RL policy still decides *how much* gets spent there.** Unchanged from before — the needs-state logic (§9.3) is independent of the rendering layer and carries over exactly as designed.
+- **Module 10 (agent_base.glb, the Mixamo asset)** is deferred, not deleted — the file and the pipeline that built it remain in the repo as a documented artifact, and could be revisited later (e.g. for a stretch-goal 3D mode) once the 2D version is solid and demoable. It is not part of the critical path anymore.
 ### 7.5 Peer influence — how agents actually affect each other
 
-You referenced *Generative Agents: Interactive Simulacra of Human Behavior* (Park et al., UIST 2023 — already cited in your literature survey, Cluster 1 item 2). Full parity with that paper — importance-weighted memory retrieval, hierarchical daily-plan reflection, free-form emergent dialogue between agents — is a research system built by a team over months, not a bolt-on. What's genuinely buildable, and gets you the thing you actually asked for (agents that nudge each other's decisions, not just decide in isolation), is a bounded peer-influence layer on top of what already exists:
+You referenced *Generative Agents: Interactive Simulacra of Human Behavior* (Park et al., UIST 2023 — already cited in your literature survey, Cluster 1 item 2). Full parity with that paper — importance-weighted memory retrieval, hierarchical daily-plan reflection, free-form emergent dialogue between agents — is a research system built by a team over months, not a bolt-on, and would be a genuine downgrade for what this project needs: their architecture is built for improvisational social dialogue via an LLM call every tick, not learned, convergent financial decision-making, and it doesn't do economic shock propagation, RL training, or any of what modules 1-9 already provide. What's genuinely buildable, and gets you the thing you actually asked for — an agent's decision measurably nudged by a peer's behaviour, mood-dependent — is the bounded peer-influence layer already designed here, which stays exactly the same regardless of whether the world is rendered in 2D or 3D:
 
 - **Co-location trigger, not constant chatter.** Peer influence only fires when two or more agents are assigned to the *same zone on the same tick* (their zone choice already comes from the needs-state layer, §9.3) — this is naturally rare enough to be meaningful, not a background hum on every tick.
-- **Default mechanism: a cheap, rule-based needs-state nudge — not an LLM call.** When agents co-locate, each one's needs-state (`budget_anxiety`, `discretionary_appetite`) is nudged based on what the *other* agent's most recent action was — seeing a peer who just Defaulted nudges `budget_anxiety` up; seeing a peer who just Spent freely at the Mall nudges `discretionary_appetite` up. This is exactly the "influence acts on other agents" behaviour you asked for, and it's transparent and inspectable (same philosophy as the reward function in §7.2) rather than another opaque model. Tune the nudge magnitude per persona's `financial_literacy` — more literate agents should be less swayed by a single peer's behaviour, which is realistic and also keeps the effect bounded rather than runaway.
-- **Optional narrative layer: extend the Agent Narrator (§8.5) to co-located pairs.** When two agents share a zone, one additional LLM call (not per-agent, per *pair*, so it stays rare) can generate a one-line exchange — "Priya mentions her rent's due; Rahul decides to skip his coffee run too." This is flavor text for the 3D scene, shown as a subtle interaction cue near the two figures — it does not itself drive behaviour (the rule-based nudge already did that); it just narrates what the nudge looked like. Prompt in §8.6.
+- **Default mechanism: a cheap, rule-based needs-state nudge — not an LLM call.** When agents co-locate, each one's needs-state (`budget_anxiety`, `discretionary_appetite`) is nudged based on what the *other* agent's most recent action was — seeing a peer who just Defaulted nudges `budget_anxiety` up; seeing a peer who just Spent freely at the Mall nudges `discretionary_appetite` up. This is exactly the "poor agent whose friends buy expensive coffee, influenced or not depending on mood" scenario — it's transparent and inspectable (same philosophy as the reward function in §7.2) rather than another opaque model. Tune the nudge magnitude per persona's `financial_literacy` — more literate agents should be less swayed by a single peer's behaviour, which is realistic and also keeps the effect bounded rather than runaway.
+- **Optional narrative layer: extend the Agent Narrator (§8.5) to co-located pairs.** When two agents share a zone, one additional LLM call (not per-agent, per *pair*, so it stays rare) can generate a one-line exchange — "Priya mentions her rent's due; Rahul decides to skip his coffee run too." This is flavor text shown as a subtle text cue near the two figures on the 2D map — it does not itself drive behaviour (the rule-based nudge already did that); it just narrates what the nudge looked like. Prompt in §8.6.
 - **This already partially flows through episodic memory (§7.3) for free.** A peer's action, once it nudges an agent's needs-state, becomes part of that agent's own event context for the tick — which gets stored via `store_episode()` (module 7) same as any other event. So a past peer interaction is retrievable later as episodic memory without any new infrastructure — the memory system you already built supports this naturally.
 - **What this deliberately does NOT do:** agents don't hold multi-turn conversations, don't form or query a "who do I trust" model of other agents, and don't propagate influence transitively beyond the tick it happens on (no simulated rumor-spreading network). Those are the pieces that would make this a research-paper-scale system rather than a semester project — name them as explicit future work in your report rather than attempting them.
 
@@ -346,101 +348,123 @@ Return JSON:
 
 ## 9. Build briefs — paste directly into Antigravity or Codex
 
-These are task-level prompts, distinct from the runtime LLM prompts above — give one of these to the coding agent when you start that specific module. Each assumes the agent already has this whole spec as context.
-
-### 9.1 3D world scene (Three.js + React Three Fiber)
+### 9.1 2D world scene (Canvas, top-down, sprite-based)
 
 ```
-Build a zone-based 3D scene for EcoSim-MAS using React Three Fiber inside the
-existing React + Vite frontend.
+Build a zone-based 2D scene for EcoSim-MAS using plain HTML5 Canvas
+(via a React component wrapping a <canvas> ref) inside the existing
+React + Vite frontend. This replaces the earlier 3D/React-Three-Fiber
+approach after it hit a persistent, unresolved skinned-mesh rendering
+bug — no Three.js dependency needed for this scene.
+
+Asset source (see §9.2 for the exact download/setup): Kenney.nl's
+"Roguelike/RPG Pack" (tiles) and "Roguelike Characters" pack (sprite
+sheets) — both CC0 (public domain, no attribution required, safe for
+a public repository), a substantial step up in visual quality from
+flat shapes while remaining simple and consistent with a minimal
+aesthetic (these are clean, flat-shaded pixel-art tiles, not painterly
+or gradient-heavy).
 
 Requirements:
-- Six fixed zone anchors on a simple ground plane: Home, Workplace, Mall,
-  Café, Theater, Grocery. Each zone is a simplified low-poly building (a
-  colored box/prism with a roof, no more than ~500 triangles) at a fixed
-  (x, z) coordinate on the map, spaced at least 8 units apart.
-- Load ONE shared glTF model exported from Mixamo (rigged, ~2000 triangles,
-  walk/idle/sit/defeated animations included — see §9.2). Instance it 10
-  times, once per agent, using @react-three/drei's useGLTF and
-  useAnimations hooks. Do NOT load 10 different character models — same
-  mesh, same skeleton, for every agent.
-- Render each instance with a wireframe or translucent material (e.g.
-  MeshBasicMaterial with wireframe: true, or a low-opacity standard
-  material) — a plain, transparent body, not a fleshed-out character. This
-  is a rendering-time material override, independent of the source mesh.
-- Attach a small floating text label (persona name, via @react-three/drei's
-  Html or Text component) above each agent's head — this is how the viewer
-  tells agents apart, not by body shape or outfit.
-- Each agent's position updates on every simulation tick received over the
-  WebSocket connection (see the tick payload shape in module 9's
-  simulate.py — agent_actions[agent_id].action_type). Map action_type to
-  animation clip:
-    - 0 (Spend)   → play "walk" toward the target zone (Mall/Café/Theater,
-                    chosen by the needs-state layer, §9.3), then "idle" on
-                    arrival. The zone visit itself communicates spending —
-                    no separate spending gesture needed.
-    - 1 (Save)    → play "walk" to Home if not already there, then "sit".
-                    Staying in and sitting reads as cautious/saving.
-    - 2 (Default) → play "defeated" in place and stop moving — the agent
-                    is terminated in the environment on this tick, so it
-                    should visibly freeze in the distress pose rather than
-                    continue to any zone.
-  When no action has changed the agent's state this tick, hold whatever
-  clip is currently playing rather than resetting to "idle" every frame.
-- Camera: fixed isometric-style orbit camera (OrbitControls, restricted polar
-  angle so the user can't go under the ground plane), default framing the
-  whole 6-zone map.
-- Materials: flat shaded, no gradients, no PBR metalness/roughness maps —
-  solid colors matching the design system's neutral + one accent palette
-  (see the frontend design system brief). The wireframe/translucent agent
-  material and the flat zone-building materials should read as one
-  consistent, minimal style.
-- Performance target: 10 animated agents + 6 static buildings at 60fps on
-  integrated graphics — keep total triangle count under 50k; instance any
-  geometry (trees, benches) that repeats more than a few times.
-- Do not model interiors, additional NPCs, roads, or anything beyond the six
-  zones and ten agents — this is a deliberately minimal diorama, not an open
-  world.
+- Six fixed zone tiles on a flat 2D canvas: Home, Workplace, Mall,
+  Café, Theater, Grocery. Each zone is represented by an appropriate
+  tile/building sprite from the Kenney tileset (e.g. a house tile for
+  Home, a storefront tile for Mall, etc. — pick the closest visual
+  match available in the pack), placed at a fixed (x, y) coordinate,
+  spaced clearly apart, with a text label above or below it. Reuse the
+  same relative layout the old 3D scene used.
+- Agents are ONE shared static character sprite (composed from Kenney's
+  Roguelike Characters modular parts — body + one outfit combination,
+  a single fixed pose, not a walk-cycle animation sheet), same
+  reasoning as before — agents are deliberately NOT visually distinct
+  from each other by sprite choice, only by a name label drawn as text
+  above the sprite. Pick one clean, neutral-looking composed character
+  and use it for all 10 agent instances.
+- Movement animation: since this asset is a single static pose (not a
+  multi-frame walk cycle), animate movement via smooth position
+  tweening only — the sprite visibly glides between zones over ~1
+  second using requestAnimationFrame, rather than a frame-swapped walk
+  cycle. This is consistent with the minimal aesthetic already in use
+  elsewhere and avoids overpromising animation the asset doesn't
+  provide. (Optional, low-effort polish if time allows: a subtle 1-2px
+  vertical bob while moving, to read as motion without needing real
+  walk frames.)
+- Each agent's position updates on every simulation tick received over
+  the WebSocket connection (agent_actions[agent_id].action_type,
+  zone[agent_id] from the tick payload — unchanged by this rendering
+  swap). Tween the sprite's (x, y) toward its new zone's tile
+  coordinates over ~1 second; hold still once arrived.
+- Represent action state via a small, subtle visual cue layered on top
+  of the sprite (not a sprite swap) — e.g. a thin colored ring/badge
+  in the corner of the sprite's bounding box: accent blue for Spend,
+  muted green for Save, muted red/grey for Defeated agents (who also
+  stop animating and freeze on their last frame at their last
+  position, since the agent is terminated in the environment on this
+  tick).
+- Camera/viewport: fixed, no pan/zoom needed for six tiles in a small
+  area — render the whole map in the canvas at a fixed scale.
+- Colors/style: keep everything else (background, UI chrome, labels)
+  matching the existing flat, no-gradient design system (§9.4) — the
+  sprites are the one place pixel-art detail is allowed, everything
+  around them stays minimal.
+- Performance target: this should run trivially well — 10 animated
+  sprites + 6 tile sprites redrawn every frame is negligible load on
+  Canvas 2D, no special optimization needed.
+- Do not model interiors, roads, or anything beyond the six zone tiles
+  and ten agent sprites — same minimal-diorama philosophy as before,
+  just with real character/tile art now.
 ```
 
-### 9.2 Mixamo character pipeline (single shared mesh)
+### 9.2 Sprite asset setup (Kenney.nl, CC0 — replaces the Mixamo pipeline)
 
 ```
-Set up the character asset pipeline for EcoSim-MAS's 3D scene.
+Set up the sprite assets for EcoSim-MAS's 2D scene. Both packs below
+are CC0 (public domain) — safe to commit into a public repository with
+no attribution requirement, unlike the earlier Mixamo-based 3D
+pipeline this replaces.
 
-Agents are deliberately NOT visually distinct — one shared plain mesh
-represents all 10 personas, differentiated by a floating name label and
-by behaviour, not appearance. This means only ONE character needs sourcing,
-not ten.
+1. Download Kenney's "Roguelike/RPG Pack" from kenney.nl/assets
+   (search "Roguelike RPG Pack") for the zone tile sprites, and
+   Kenney's "Roguelike Characters" pack (search "Roguelike Characters")
+   for the agent sprite sheet. Both are free direct downloads, no
+   account needed.
+2. Extract the specific tile images needed for the six zones (house,
+   storefront/shop, office/building, restaurant/café, theater/
+   entertainment venue, market/grocery — pick the closest matches
+   available in the pack) and ONE character sprite sheet for agents.
+3. Store them at frontend/public/sprites/tiles/ and
+   frontend/public/sprites/agent.png (or .json + spritesheet if the
+   pack provides an atlas format — either is fine, whichever is
+   simpler to slice frames from in Canvas 2D drawImage calls).
+4. frontend/public/models/agents/agent_base.glb and
+   scripts/convert_agent.py (the old Mixamo pipeline output) remain in
+   the repo as a deferred artifact per §7.4, unused by the running app.
+5. Document the source and license in a short
+   frontend/public/sprites/CREDITS.md — even though CC0 doesn't
+   require attribution, crediting Kenney is good practice and costs
+   nothing.
 
-1. Source ONE simple base character from Mixamo (mixamo.com, free Adobe
-   account) — a plain default rig such as Mixamo's own "X Bot" or "Y Bot"
-   is a good fit, since it's already neutral and low-poly. Appearance
-   doesn't matter beyond "simple humanoid" — it will be rendered as a
-   wireframe/translucent material at runtime regardless of source look.
-2. Animations needed, downloaded "without skin" against that same base
-   character: Idle, Walking, Sitting (for Home/Theater zones and the Save
-   action), Defeated (for the Default action — a slumped, distressed pose
-   the agent freezes in when terminated by the environment).
-3. Export as ONE glTF (.glb) via Mixamo → Blender → glTF export (Mixamo
-   doesn't export glTF directly — import the base FBX + all animation FBXs
-   into Blender, then use Blender's built-in glTF 2.0 exporter to produce
-   a single .glb with all animation clips embedded) so it loads natively in
-   three.js without a runtime FBX loader.
-4. Store the exported file at /frontend/public/models/agents/agent_base.glb,
-   under 2MB (Draco-compress geometry via gltf-transform if needed).
-5. The frontend instances this single file 10 times (§9.1) and pairs each
-   instance with a persona_slug from the Postgres persona table purely for
-   the floating name label — the mesh itself carries no per-persona data.
+Implement the action_type → visual state mapping directly in the
+Canvas rendering code (§9.1):
+  - action_type 0 (Spend) → tween toward the zone, accent-blue corner
+    badge on arrival
+  - action_type 1 (Save) → tween toward Home, muted-green corner badge
+    on arrival
+  - action_type 2 (Default) → muted-red/grey corner badge, freeze in
+    place and stop moving — the agent is terminated in the environment
+    on this tick
+When no action has changed an agent's state this tick, keep whatever
+visual state it currently has rather than resetting it every frame.
 ```
 
 ### 9.3 Agent needs-state and zone selection
 
 ```
 Implement a lightweight needs-state layer between the RL policy's
-Spend/Save/Default decision and the 3D scene's zone assignment. This is a
-rule-based state machine — not an LLM call and not a second RL policy — keep
-it simple and inspectable.
+Spend/Save/Default decision and the scene's zone assignment. This is a
+rule-based state machine — not an LLM call and not a second RL policy —
+keep it simple and inspectable. This logic is entirely independent of
+the 2D/3D rendering choice and does not change based on §9.1/§9.2.
 
 Each agent has three needs, updated once per simulation tick, range 0-1:
 - budget_anxiety: increases when the RL policy's chosen action magnitude
@@ -462,8 +486,9 @@ only):
   "night" ticks
 
 Expose the needs state and resulting zone choice on the WebSocket tick
-payload so the frontend can render a small needs readout next to each agent
-(three thin horizontal bars, no gradients, matching the design system).
+payload so the frontend can render a small needs readout next to each
+agent (three thin horizontal bars, no gradients, matching the design
+system) — same as before, unaffected by the 2D rendering swap.
 
 Peer influence (§7.5): after zone assignment, check for agents co-located
 in the same zone this tick. For each co-located pair, apply a symmetric
@@ -493,7 +518,7 @@ env var or query param on the simulate/start endpoint) since it adds one
 LLM call per co-located pair per tick — keep it off by default for fast
 iteration, on for the actual demo. Attach the narration string to the
 WebSocket tick payload alongside the pair's agent IDs so the frontend can
-render it as a small text bubble near the two figures in the 3D scene.
+render it as a small text label near the two circles on the 2D canvas.
 ```
 
 ### 9.4 Frontend design system (no gradients, minimal, presentation-grade)
@@ -506,7 +531,7 @@ Palette: off-white background (#FAFAF8), near-black text (#1A1A18), one
 accent color used only for the single most important number or active state
 on any given screen (a muted blue, #2F6FED, used sparingly — never as a
 background fill). No gradients anywhere, including charts, buttons, or the
-3D scene's lighting.
+2D canvas scene's fills.
 
 Typography: a single sans-serif family (Inter or system-ui stack), two
 weights only (regular, medium) — no bold, no italics for emphasis; use size
@@ -515,13 +540,13 @@ and spacing instead.
 Surfaces: flat fills with a single 1px hairline border (#E5E5E0), no drop
 shadows, no elevation layers. Corners: 8px radius, consistently applied.
 
-Layout: one primary visualization per screen (the 3D scene, or a single
+Layout: one primary visualization per screen (the 2D scene, or a single
 chart, or the validation scorecard) with generous whitespace around it —
 target at least 15% of viewport as empty margin. Secondary data (agent list,
 causal chain steps) collapses into a dismissible side panel rather than
 permanently competing for attention.
 
-Motion: transitions only where they carry meaning (an agent walking between
+Motion: transitions only where they carry meaning (an agent moving between
 zones, a number counting up after a tick). Ease-out timing, 200-400ms. No
 decorative motion, no parallax, no hover glow.
 
@@ -569,8 +594,8 @@ You're building this alone, so drop the multi-owner framing — one module at a 
 | 7 | Qdrant episodic memory integration | No (self-hosted) |
 | 8 | LightGBM + temporal model training on simulation logs | No |
 | 9 | FastAPI endpoints + WebSocket streaming | No |
-| 10 | Mixamo character pipeline — ONE shared mesh, not 10 (§9.2) | No (free Adobe account, one-time asset export) |
-| 11 | 3D world scene + needs-state zone logic (§9.1, §9.3) | No |
+| 10 | (Deferred — was Mixamo character pipeline; see §7.4) | — |
+| 11 | 2D world scene + needs-state zone logic (§9.1, §9.2, §9.3) | No |
 | 12 | React dashboard: design system, Scenario Parser confirmation card, Validation Mode tab (§9.4) | No |
 | 13 | Swap fixtures for live GDELT/NewsAPI/RBI/Groq calls | Yes — all of them |
 
@@ -584,7 +609,7 @@ Building in this order means every module is independently testable before the n
 
 Earlier this doc assumed a 4-person split across Antigravity and Codex — that doesn't apply when you're building alone. Simpler rules for a solo build:
 
-**Pick one daily driver.** Use **Antigravity** for everything by default — it handles backend and frontend equally well, its Manager Surface still gives you internal parallelism (e.g. it can scaffold the Mixamo pipeline and the 3D scene as two sub-tasks while you review something else), and it already talks to Ollama locally, which you need anyway for the causal-chain fallback.
+**Pick one daily driver.** Use **Antigravity** for everything by default — it handles backend and frontend equally well, its Manager Surface still gives you internal parallelism (e.g. it can scaffold the 2D canvas scene and the needs-state logic as two sub-tasks while you review something else), and it already talks to Ollama locally, which you need anyway for the causal-chain fallback.
 
 **Bring in Codex only as a second opinion, not a co-owner.** Once a module is working, optionally open the same repo in Codex and ask it to review that module against this spec ("read ARCHITECTURE.md §7, review /backend/simulation against it, flag anything that violates the design") — a review pass, not parallel construction. You never need two tools editing the repo at the same time when you're the only human in the loop; the risk that made §13.1/§13.2 necessary for a team (two agents colliding on the same files) doesn't exist when there's only one of you directing one tool at a time.
 
