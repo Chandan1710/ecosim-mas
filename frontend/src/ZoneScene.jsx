@@ -1,193 +1,680 @@
 /**
- * ZoneScene — 3D environment with static zone buildings + agent layer
- * (Module 11a + 11b, §9.1)
+ * ZoneScene — 2D Canvas world scene for EcoSim-MAS (Module 11, §9.1–9.2)
  *
- * Six fixed zone buildings on a flat ground plane.
- * Ten agent instances loaded from agent_base.glb, wireframe material,
- * Idle animation, persona-name labels.
- * No WebSocket connection yet — purely static scene.
- *
- * Design constraints (§9.4):
- *   - Flat shaded, no PBR maps, no gradients
- *   - Zone colours from CSS design system (replicated here as Three.js hex values)
- *   - Camera: isometric-style OrbitControls, restricted polar angle
+ * Renders six zone tiles at fixed coordinates and 10 agent sprites,
+ * driven by live WebSocket tick data from GET /ws/simulate/{run_id}.
  */
 
-import { Suspense } from 'react'
-import { Canvas } from '@react-three/fiber'
-import { OrbitControls, Html } from '@react-three/drei'
-import * as THREE from 'three'
-import AgentLayer from './AgentLayer'
+import React, { useEffect, useRef, useState } from 'react'
 
-// ── Zone definitions ───────────────────────────────────────────────────────
-// Positions keep zones at least 8 units apart on the XZ plane.
-// Y is always 0 (ground level for the base of each building).
+const TILE_SHEET_URL = '/sprites/tiles/Spritesheet/roguelikeSheet_transparent.png'
+const CHAR_SHEET_URL = '/sprites/agent_source/Spritesheet/roguelikeChar_transparent.png'
 
-const ZONES = [
-  {
-    id: 'home',
-    label: 'Home',
-    position: [-14, 0, -8],
-    color: 0x8B9E7E,   // muted sage green
-    roofColor: 0x6E8063,
-    width: 3.5, depth: 3.5, wallHeight: 2.2,
-  },
-  {
-    id: 'workplace',
-    label: 'Workplace',
-    position: [0, 0, -14],
-    color: 0x7B8FA6,   // slate blue
-    roofColor: 0x5C7189,
-    width: 5, depth: 4, wallHeight: 4.5,   // taller office block
-  },
-  {
-    id: 'mall',
-    label: 'Mall',
-    position: [14, 0, -4],
-    color: 0xC4956A,   // warm terracotta
-    roofColor: 0xA07550,
-    width: 6, depth: 5, wallHeight: 3.0,   // wide low-rise
-  },
-  {
-    id: 'cafe',
-    label: 'Café',
-    position: [10, 0, 10],
-    color: 0xA67B5B,   // espresso brown
-    roofColor: 0x7D5A3E,
-    width: 3, depth: 3, wallHeight: 2.0,
-  },
-  {
-    id: 'theater',
-    label: 'Theater',
-    position: [-6, 0, 12],
-    color: 0x6A7B9E,   // dusty indigo
-    roofColor: 0x4E5F80,
-    width: 5.5, depth: 4.5, wallHeight: 3.5,
-  },
-  {
-    id: 'grocery',
-    label: 'Grocery',
-    position: [-16, 0, 6],
-    color: 0x7E9E8B,   // cool mint
-    roofColor: 0x608070,
-    width: 4, depth: 3.5, wallHeight: 2.5,
-  },
+// 10 personas from backend/fixtures/personas.json (order matches backend indexing)
+const PERSONAS = [
+  'Frugal Senior',
+  'Aggressive Student',
+  'Cautious Professional',
+  'Impulse Spender',
+  'Optimistic Entrepreneur',
+  'Struggling Worker',
+  'Balanced Family',
+  'Wealthy Retiree',
+  'Tech-Savvy Investor',
+  'Conservative Saver',
 ]
 
-// ── Building component ──────────────────────────────────────────────────────
-
-function Building({ zone }) {
-  const { position, color, roofColor, width, depth, wallHeight, label } = zone
-
-  // Wall material — flat shaded, no PBR
-  const wallMat = new THREE.MeshLambertMaterial({ color, flatShading: true })
-  // Roof material
-  const roofMat = new THREE.MeshLambertMaterial({ color: roofColor, flatShading: true })
-
-  const wallY   = wallHeight / 2          // center Y of the wall box
-  const roofY   = wallHeight + 0.85       // apex of the roof cone
-
-  // Roof is a ConeGeometry — minimal triangles, clearly reads as a building
-  const roofRadiusBase = Math.max(width, depth) * 0.72
-  const roofHeight     = 1.7
-
-  // Label sits above the roof
-  const labelY = wallHeight + roofHeight + 0.8
-
-  return (
-    <group position={position}>
-      {/* Walls */}
-      <mesh position={[0, wallY, 0]} material={wallMat} castShadow={false}>
-        <boxGeometry args={[width, wallHeight, depth]} />
-      </mesh>
-
-      {/* Roof */}
-      <mesh position={[0, roofY, 0]} material={roofMat}>
-        <coneGeometry args={[roofRadiusBase, roofHeight, 4, 1]} />
-      </mesh>
-
-      {/* Zone label — rendered as HTML overlay via drei's Html */}
-      <Html
-        position={[0, labelY, 0]}
-        center
-        distanceFactor={18}
-        zIndexRange={[10, 0]}
-      >
-        <div className="zone-label">{label}</div>
-      </Html>
-    </group>
-  )
+// Persona slug generator matching backend: name.lower().replace(' ', '_')
+function personaSlug(name) {
+  return name.toLowerCase().replace(/ /g, '_')
 }
 
-// ── Ground plane ────────────────────────────────────────────────────────────
-
-function Ground() {
-  return (
-    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]} receiveShadow={false}>
-      <planeGeometry args={[80, 80]} />
-      <meshLambertMaterial color={0xD9D6CE} flatShading={true} />
-    </mesh>
-  )
+// Normalize backend zone strings ("Café" -> "cafe") so they match ZONES keys.
+// Lowercase + strip diacritics. Returns '' for empty input.
+function normalizeZone(raw) {
+  return (raw || '')
+    .toString()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
 }
 
-// ── Scene lighting — no gradients, no coloured fills ─────────────────────
+// Needs-state bar styling (§9.3) — flat fills, no gradients (§9.4)
+const NEED_BARS = [
+  { key: 'budget_anxiety',         label: 'Budget anxiety',         color: '#A8574F' },
+  { key: 'essential_pressure',     label: 'Essential pressure',     color: '#B8913F' },
+  { key: 'discretionary_appetite', label: 'Discretionary appetite', color: '#5C7FA3' },
+]
+const DISCRETIONARY_ZONES = ['mall', 'cafe', 'theater']
 
-function SceneLighting() {
+// ── Zone definitions & Sprite Coordinates (§9.1, §9.2) ─────────────────────
+// 17px grid interval: sx = col * 17, sy = row * 17
+const ZONES = {
+  home: {
+    id: 'home',
+    label: 'Home',
+    row: 2,
+    col: 40,
+    x: 210,
+    y: 150,
+    color: '#8B9E7E',
+    bgColor: 'rgba(139, 158, 126, 0.14)',
+    borderColor: 'rgba(139, 158, 126, 0.5)',
+  },
+  workplace: {
+    id: 'workplace',
+    label: 'Workplace',
+    row: 5,
+    col: 44,
+    x: 520,
+    y: 90,
+    color: '#7B8FA6',
+    bgColor: 'rgba(123, 143, 166, 0.14)',
+    borderColor: 'rgba(123, 143, 166, 0.5)',
+  },
+  mall: {
+    id: 'mall',
+    label: 'Mall',
+    row: 3,
+    col: 42,
+    x: 820,
+    y: 230,
+    color: '#C4956A',
+    bgColor: 'rgba(196, 149, 106, 0.14)',
+    borderColor: 'rgba(196, 149, 106, 0.5)',
+  },
+  cafe: {
+    id: 'cafe',
+    label: 'Café',
+    row: 4,
+    col: 42,
+    x: 720,
+    y: 490,
+    color: '#A67B5B',
+    bgColor: 'rgba(166, 123, 91, 0.14)',
+    borderColor: 'rgba(166, 123, 91, 0.5)',
+  },
+  theater: {
+    id: 'theater',
+    label: 'Theater',
+    row: 3,
+    col: 37,
+    x: 410,
+    y: 520,
+    color: '#6A7B9E',
+    bgColor: 'rgba(106, 123, 158, 0.14)',
+    borderColor: 'rgba(106, 123, 158, 0.5)',
+  },
+  grocery: {
+    id: 'grocery',
+    label: 'Grocery',
+    row: 2,
+    col: 46,
+    x: 180,
+    y: 410,
+    color: '#7E9E8B',
+    bgColor: 'rgba(126, 158, 139, 0.14)',
+    borderColor: 'rgba(126, 158, 139, 0.5)',
+  },
+}
+
+// Agent sprite coordinate: row 5, col 0 in character sheet
+const AGENT_SPRITE = { row: 5, col: 0 }
+
+// Offsets within a zone so multiple co-located agents have clear spacing without label collisions
+const AGENT_SLOT_OFFSETS = [
+  { x: -54, y: 34 },
+  { x:  54, y: 34 },
+  { x:   0, y: 72 },
+  { x: -64, y: 110 },
+  { x:  64, y: 110 },
+  { x:   0, y: 146 },
+  { x: -90, y: 72 },
+  { x:  90, y: 72 },
+  { x: -90, y: 146 },
+  { x:  90, y: 146 },
+]
+
+// Action type visual styling (§9.1, §9.2)
+const ACTION_STYLES = {
+  0: { label: 'SPEND', color: '#2F6FED', name: 'Spend' },    // Action 0: Spend -> accent blue
+  1: { label: 'SAVE',  color: '#4E8752', name: 'Save' },     // Action 1: Save -> muted green
+  2: { label: 'DEFAULT', color: '#C94A4A', name: 'Default' }, // Action 2: Default -> muted red/grey
+}
+
+// Initial zone placement round-robin for static placeholder layout
+const ZONE_KEYS = Object.keys(ZONES)
+
+function getInitialAgents() {
+  return PERSONAS.map((name, index) => {
+    const aid = personaSlug(name)
+    const initialZoneKey = ZONE_KEYS[index % ZONE_KEYS.length]
+    const zone = ZONES[initialZoneKey]
+    const slot = AGENT_SLOT_OFFSETS[index % AGENT_SLOT_OFFSETS.length]
+    const startX = zone.x + slot.x
+    const startY = zone.y + slot.y
+
+    return {
+      id: aid,
+      name,
+      index,
+      zoneKey: initialZoneKey,
+      currentX: startX,
+      currentY: startY,
+      targetX: startX,
+      targetY: startY,
+      actionType: null,
+      isTerminated: false,
+      needs: {
+        budget_anxiety: 0.5,
+        essential_pressure: 0.5,
+        discretionary_appetite: 0.5,
+      },
+      // smoothed copy of needs used for drawing the bars
+      displayNeeds: {
+        budget_anxiety: 0.5,
+        essential_pressure: 0.5,
+        discretionary_appetite: 0.5,
+      },
+    }
+  })
+}
+
+export default function ZoneScene({ runId, onTickUpdate, onStatusChange }) {
+  const canvasRef = useRef(null)
+  const agentsRef = useRef(getInitialAgents())
+  const imagesRef = useRef({ tiles: null, chars: null })
+  const [imagesLoaded, setImagesLoaded] = useState(false)
+  const animFrameIdRef = useRef(null)
+  // Latest-callback refs: App passes new function instances on every render, and
+  // listing them as effect deps tore down and reopened the WebSocket on every
+  // status change (socket closed before the first tick arrived). The WebSocket
+  // effect below now depends on runId only.
+  const onTickUpdateRef = useRef(onTickUpdate)
+  const onStatusChangeRef = useRef(onStatusChange)
+  useEffect(() => {
+    onTickUpdateRef.current = onTickUpdate
+    onStatusChangeRef.current = onStatusChange
+  })
+  // Co-location display state for the CURRENT tick only (§7.5):
+  //   pairs:   drawable pairs [{a, b, zoneKey, label, showPill}]. A per-pair nudge
+  //            pill is shown only when a zone has exactly 1 pair (more would overlap).
+  //   summary: {zoneKey: pairCount} for zones with 2+ pairs -> one summary pill.
+  //            Zones with >6 pairs get the summary pill only (no lines).
+  const pairsRef = useRef({ pairs: [], summary: {} })
+
+  // Load Spritesheets
+  useEffect(() => {
+    let loadedCount = 0
+    const checkLoaded = () => {
+      loadedCount++
+      if (loadedCount === 2) {
+        setImagesLoaded(true)
+      }
+    }
+
+    const tileImg = new Image()
+    tileImg.src = TILE_SHEET_URL
+    tileImg.onload = () => {
+      imagesRef.current.tiles = tileImg
+      checkLoaded()
+    }
+
+    const charImg = new Image()
+    charImg.src = CHAR_SHEET_URL
+    charImg.onload = () => {
+      imagesRef.current.chars = charImg
+      checkLoaded()
+    }
+  }, [])
+
+  // WebSocket Connection
+  useEffect(() => {
+    if (!runId) {
+      onStatusChangeRef.current?.('idle')
+      return
+    }
+
+    onStatusChangeRef.current?.('connecting')
+
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
+    const wsUrl = `${wsProtocol}://${window.location.host}/ws/simulate/${runId}`
+    const ws = new WebSocket(wsUrl)
+    let completed = false // set once the server says simulation_complete
+
+    ws.onopen = () => {
+      onStatusChangeRef.current?.('connected')
+    }
+
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+
+        if (data.status === 'simulation_complete') {
+          completed = true
+          onStatusChangeRef.current?.('complete')
+          ws.close()
+          return
+        }
+
+        onTickUpdateRef.current?.(data)
+
+        onStatusChangeRef.current?.(`streaming tick ${data.tick}`)
+
+        // Update agent targets and action states
+        const zoneAssignments = data.zone || {}
+        const agentActions = data.agent_actions || {}
+        const needsState = data.needs_state || {}
+
+        agentsRef.current.forEach((agent) => {
+          const aid = agent.id
+
+          // If agent has terminated, it stays frozen in place (§9.1, §9.2)
+          if (agent.isTerminated) return
+
+          // Action update
+          if (agentActions[aid] !== undefined) {
+            const act = agentActions[aid].action_type
+            agent.actionType = act
+            if (act === 2) {
+              agent.isTerminated = true // Default -> freeze in place
+            }
+          }
+
+          // Needs state update
+          if (needsState[aid]) {
+            agent.needs = needsState[aid]
+          }
+
+          // Zone assignment update (normalize to lowercase)
+          const assignedZone = normalizeZone(zoneAssignments[aid])
+          if (assignedZone && !ZONES[assignedZone]) {
+            console.warn(`[ZoneScene] Unknown zone "${zoneAssignments[aid]}" for agent ${aid}`)
+          }
+          if (assignedZone && ZONES[assignedZone]) {
+            agent.zoneKey = assignedZone
+            const targetZone = ZONES[assignedZone]
+            const slot = AGENT_SLOT_OFFSETS[agent.index % AGENT_SLOT_OFFSETS.length]
+
+            if (!agent.isTerminated) {
+              agent.targetX = targetZone.x + slot.x
+              agent.targetY = targetZone.y + slot.y
+            }
+          }
+        })
+        // ── Co-located pairs for THIS tick only (§7.5) ───────────────────
+        const agentById = {}
+        agentsRef.current.forEach((a) => { agentById[a.id] = a })
+        const perZone = {}
+        ;(data.co_located_pairs || []).forEach((pair) => {
+          const a = agentById[pair.agent_a]
+          const b = agentById[pair.agent_b]
+          const zk = normalizeZone(pair.zone)
+          // Only draw pairs where both agents are active and actually standing in
+          // that zone; frozen (defaulted) agents stay where they were, so a line to
+          // them would stretch across the map and mislead.
+          if (!a || !b || a.isTerminated || b.isTerminated) return
+          if (a.zoneKey !== zk || b.zoneKey !== zk) return
+          const labelFor = (peerId, nudge) => {
+            if (!nudge) return null
+            const peerAct = agentActions[peerId]?.action_type
+            const need = peerAct === 0 && DISCRETIONARY_ZONES.includes(zk) ? 'app' : 'anx'
+            return `${nudge > 0 ? '+' : '\u2212'}${Math.abs(nudge).toFixed(2)} ${need}`
+          }
+          const l1 = labelFor(pair.agent_a, pair.nudge_a_on_b)
+          const l2 = labelFor(pair.agent_b, pair.nudge_b_on_a)
+          const parts = [l1, l2].filter(Boolean)
+          const label = parts.length === 2 && parts[0] === parts[1]
+            ? `${parts[0]} \u00d72`
+            : parts.join(' | ')
+          ;(perZone[zk] = perZone[zk] || []).push({ a, b, zoneKey: zk, label })
+        })
+        const pairs = []
+        const summary = {}
+        Object.entries(perZone).forEach(([zk, list]) => {
+          if (list.length > 1) summary[zk] = list.length
+          if (list.length > 6) return // too dense for lines: summary pill only
+          list.forEach((pr) => pairs.push({ ...pr, showPill: list.length === 1 }))
+        })
+        pairsRef.current = { pairs, summary }
+      } catch (err) {
+        console.error('Error parsing simulation WebSocket message:', err)
+      }
+    }
+
+    ws.onerror = (err) => {
+      console.error('Simulation WebSocket error:', err)
+      onStatusChangeRef.current?.('error')
+    }
+
+    ws.onclose = () => {
+      // Don't overwrite 'complete' with 'disconnected' on a normal end of run
+      if (!completed) onStatusChangeRef.current?.('disconnected')
+    }
+
+    return () => {
+      ws.close()
+    }
+  }, [runId])
+
+  // Canvas Render Loop
+  useEffect(() => {
+    let lastTime = performance.now()
+
+    const render = (now) => {
+      const dt = Math.min((now - lastTime) / 1000, 0.1) // clamp delta time
+      lastTime = now
+
+      const canvas = canvasRef.current
+      if (!canvas) {
+        animFrameIdRef.current = requestAnimationFrame(render)
+        return
+      }
+
+      const ctx = canvas.getContext('2d')
+      const width = canvas.width
+      const height = canvas.height
+
+      // Crisp pixel art settings
+      ctx.imageSmoothingEnabled = false
+
+      // ── 1. Clear & Background ──────────────────────────────────────────
+      ctx.fillStyle = '#FAFAF8' // --color-bg
+      ctx.fillRect(0, 0, width, height)
+
+      // Subtle ground grid dots (flat, minimal)
+      ctx.fillStyle = '#E5E5E0'
+      const gridStep = 40
+      for (let gx = 20; gx < width; gx += gridStep) {
+        for (let gy = 20; gy < height; gy += gridStep) {
+          ctx.fillRect(gx, gy, 2, 2)
+        }
+      }
+
+      const tilesImg = imagesRef.current.tiles
+      const charsImg = imagesRef.current.chars
+
+      // ── 2. Draw Zone Buildings ─────────────────────────────────────────
+      Object.values(ZONES).forEach((zone) => {
+        const { x, y, label, row, col, bgColor, borderColor, color } = zone
+
+        // Zone area background card
+        const cardW = 170
+        const cardH = 180
+        const cardX = x - cardW / 2
+        const cardY = y - 36
+
+        ctx.fillStyle = bgColor
+        ctx.strokeStyle = borderColor
+        ctx.lineWidth = 1
+
+        // Rounded rect for zone card
+        drawRoundedRect(ctx, cardX, cardY, cardW, cardH, 8)
+        ctx.fill()
+        ctx.stroke()
+
+        // Draw 16x16 building tile scaled 3x (48x48px)
+        const tileScale = 3
+        const tileDrawSize = 16 * tileScale
+        const tileDrawX = x - tileDrawSize / 2
+        const tileDrawY = y - tileDrawSize / 2
+
+        if (tilesImg) {
+          const sx = col * 17
+          const sy = row * 17
+          ctx.drawImage(
+            tilesImg,
+            sx, sy, 16, 16,
+            tileDrawX, tileDrawY, tileDrawSize, tileDrawSize
+          )
+        }
+
+        // Zone Name Label Pill
+        ctx.font = '600 11px Inter, system-ui, sans-serif'
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+
+        const textMetrics = ctx.measureText(label.toUpperCase())
+        const pillW = textMetrics.width + 14
+        const pillH = 18
+        const pillX = x - pillW / 2
+        const pillY = y - tileDrawSize / 2 - 16
+
+        ctx.fillStyle = '#FFFFFF'
+        ctx.strokeStyle = '#E5E5E0'
+        ctx.lineWidth = 1
+        drawRoundedRect(ctx, pillX, pillY, pillW, pillH, 4)
+        ctx.fill()
+        ctx.stroke()
+
+        ctx.fillStyle = color
+        ctx.fillText(label.toUpperCase(), x, pillY + pillH / 2)
+      })
+
+      // ── 2b. Co-location lines (§7.5) — drawn under the sprites ──────────
+      const { pairs: livePairs, summary: summaryZones } = pairsRef.current
+      ctx.save()
+      ctx.strokeStyle = 'rgba(90, 90, 84, 0.45)'
+      ctx.lineWidth = 1
+      ctx.setLineDash([4, 3])
+      livePairs.forEach(({ a, b }) => {
+        ctx.beginPath()
+        ctx.moveTo(Math.round(a.currentX), Math.round(a.currentY))
+        ctx.lineTo(Math.round(b.currentX), Math.round(b.currentY))
+        ctx.stroke()
+      })
+      ctx.restore()
+
+      // ── 3. Update & Draw Agents ────────────────────────────────────────
+      const agents = agentsRef.current
+
+      // Sort by Y for natural depth overlap
+      const sortedAgents = [...agents].sort((a, b) => a.currentY - b.currentY)
+
+      sortedAgents.forEach((agent) => {
+        // Tween position toward target over ~1s
+        if (!agent.isTerminated) {
+          const dx = agent.targetX - agent.currentX
+          const dy = agent.targetY - agent.currentY
+          const dist = Math.sqrt(dx * dx + dy * dy)
+
+          if (dist > 0.5) {
+            agent.currentX += dx * Math.min(1, 3.2 * dt)
+            agent.currentY += dy * Math.min(1, 3.2 * dt)
+          } else {
+            agent.currentX = agent.targetX
+            agent.currentY = agent.targetY
+          }
+        }
+
+        const ax = Math.round(agent.currentX)
+        const ay = Math.round(agent.currentY)
+
+        // Draw shadow under agent
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.12)'
+        ctx.beginPath()
+        ctx.ellipse(ax, ay + 14, 10, 4, 0, 0, Math.PI * 2)
+        ctx.fill()
+
+        // Draw Character Sprite (2.25x scale = 36x36px)
+        const charScale = 2.25
+        const charDrawSize = 16 * charScale
+        const charX = ax - charDrawSize / 2
+        const charY = ay - charDrawSize / 2
+
+        if (charsImg) {
+          const sx = AGENT_SPRITE.col * 17
+          const sy = AGENT_SPRITE.row * 17
+          ctx.drawImage(
+            charsImg,
+            sx, sy, 16, 16,
+            charX, charY, charDrawSize, charDrawSize
+          )
+        }
+
+        // Action corner badge (§9.1, §9.2)
+        if (agent.actionType !== null && ACTION_STYLES[agent.actionType]) {
+          const badgeStyle = ACTION_STYLES[agent.actionType]
+          const badgeX = ax + 10
+          const badgeY = ay - 12
+          const badgeRadius = 4.5
+
+          // Outer ring
+          ctx.fillStyle = '#FFFFFF'
+          ctx.beginPath()
+          ctx.arc(badgeX, badgeY, badgeRadius + 1.5, 0, Math.PI * 2)
+          ctx.fill()
+
+          // Inner colored badge
+          ctx.fillStyle = badgeStyle.color
+          ctx.beginPath()
+          ctx.arc(badgeX, badgeY, badgeRadius, 0, Math.PI * 2)
+          ctx.fill()
+        }
+
+        // Floating Persona Name Label
+        ctx.font = '500 10px Inter, system-ui, sans-serif'
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+
+        const nameMetrics = ctx.measureText(agent.name)
+        const labelW = nameMetrics.width + 10
+        const labelH = 16
+        const labelX = ax - labelW / 2
+        const labelY = ay - 28
+
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.92)'
+        ctx.strokeStyle = agent.actionType === 0 ? '#2F6FED' : (agent.actionType === 1 ? '#4E8752' : (agent.actionType === 2 ? '#C94A4A' : '#D0D0C8'))
+        ctx.lineWidth = 1
+        drawRoundedRect(ctx, labelX, labelY, labelW, labelH, 4)
+        ctx.fill()
+        ctx.stroke()
+
+        ctx.fillStyle = '#1A1A18'
+        ctx.fillText(agent.name, ax, labelY + labelH / 2)
+
+        // Needs bars (§9.3): three thin flat bars to the right of the sprite.
+        // Displayed values ease toward the latest tick values instead of snapping.
+        const barW = 24
+        const barH = 3
+        const barGap = 2
+        const barX = ax + 20
+        const barY0 = ay - 6
+        ctx.save()
+        if (agent.isTerminated) ctx.globalAlpha = 0.45
+        NEED_BARS.forEach((nb, i) => {
+          const target = Math.max(0, Math.min(1, agent.needs?.[nb.key] ?? 0))
+          const cur = agent.displayNeeds[nb.key]
+          agent.displayNeeds[nb.key] = cur + (target - cur) * Math.min(1, 4 * dt)
+          const by = barY0 + i * (barH + barGap)
+          ctx.fillStyle = '#E5E5E0'
+          ctx.fillRect(barX, by, barW, barH)
+          ctx.fillStyle = nb.color
+          ctx.fillRect(barX, by, Math.max(0, barW * agent.displayNeeds[nb.key]), barH)
+        })
+        ctx.restore()
+      })
+
+      // ── 3b. Co-location pills (§7.5) — drawn above the sprites ──────────
+      livePairs.forEach(({ a, b, label, showPill }) => {
+        if (!label || !showPill) return
+        const mx = (a.currentX + b.currentX) / 2
+        const my = (a.currentY + b.currentY) / 2
+        drawPill(ctx, label, mx, my, '#5A5A54')
+      })
+      Object.entries(summaryZones).forEach(([zk, count]) => {
+        const z = ZONES[zk]
+        if (!z) return
+        drawPill(ctx, `${count} peer pairs`, z.x, z.y - 62, '#5A5A54')
+      })
+
+      // ── 3c. Needs legend (bottom-left) ───────────────────────────────────
+      ctx.save()
+      ctx.font = '500 10px Inter, system-ui, sans-serif'
+      ctx.textAlign = 'left'
+      ctx.textBaseline = 'middle'
+      const legendX = 16
+      const legendY = height - 14 - (NEED_BARS.length - 1) * 16
+      NEED_BARS.forEach((nb, i) => {
+        const ly = legendY + i * 16
+        ctx.fillStyle = nb.color
+        ctx.fillRect(legendX, ly - 2, 18, 4)
+        ctx.fillStyle = '#6B6B68'
+        ctx.fillText(nb.label, legendX + 26, ly)
+      })
+      ctx.restore()
+
+      animFrameIdRef.current = requestAnimationFrame(render)
+    }
+
+    animFrameIdRef.current = requestAnimationFrame(render)
+
+    return () => {
+      if (animFrameIdRef.current) {
+        cancelAnimationFrame(animFrameIdRef.current)
+      }
+    }
+  }, [imagesLoaded])
+
   return (
-    <>
-      {/*
-        Flat, neutral ambient — matches "no gradients" design rule.
-        A single DirectionalLight provides enough depth cues without
-        dramatic shadows or colour tinting.
-      */}
-      <ambientLight intensity={1.6} color={0xFFFFFF} />
-      <directionalLight
-        position={[20, 30, 20]}
-        intensity={0.9}
-        color={0xFFFFFF}
+    <div style={{
+      width: '100%',
+      height: '100%',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      background: '#EFF0F2',
+      position: 'relative',
+      overflow: 'hidden',
+    }}>
+      <canvas
+        ref={canvasRef}
+        width={1020}
+        height={660}
+        style={{
+          maxWidth: '100%',
+          maxHeight: '100%',
+          boxShadow: '0 2px 16px rgba(0,0,0,0.06)',
+          borderRadius: '8px',
+          border: '1px solid #E5E5E0',
+          background: '#FAFAF8',
+        }}
       />
-    </>
+    </div>
   )
 }
 
-// ── Camera helpers ──────────────────────────────────────────────────────────
-
-const CAMERA_POSITION = [28, 28, 28]   // isometric-ish starting angle
-
-function SceneCamera() {
-  return (
-    <OrbitControls
-      enablePan={true}
-      enableZoom={true}
-      enableRotate={true}
-      minPolarAngle={Math.PI / 8}       // can't go past bird's-eye
-      maxPolarAngle={Math.PI / 2.4}     // can't go below horizon
-      minDistance={10}
-      maxDistance={80}
-      target={[0, 0, 0]}
-    />
-  )
+// Utility: draw rounded rectangle
+function drawRoundedRect(ctx, x, y, width, height, radius) {
+  ctx.beginPath()
+  ctx.moveTo(x + radius, y)
+  ctx.lineTo(x + width - radius, y)
+  ctx.quadraticCurveTo(x + width, y, x + width, y + radius)
+  ctx.lineTo(x + width, y + height - radius)
+  ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height)
+  ctx.lineTo(x + radius, y + height)
+  ctx.quadraticCurveTo(x, y + height, x, y + height - radius)
+  ctx.lineTo(x, y + radius)
+  ctx.quadraticCurveTo(x, y, x + radius, y)
+  ctx.closePath()
 }
 
-// ── Root export ─────────────────────────────────────────────────────────────
-
-export default function ZoneScene() {
-  return (
-    <Canvas
-      camera={{ position: CAMERA_POSITION, fov: 40, near: 0.1, far: 500 }}
-      style={{ background: '#EFF0F2' }}   // --color-sky from design system
-      gl={{ antialias: true }}
-    >
-      <SceneLighting />
-      <Ground />
-      {ZONES.map(zone => (
-        <Building key={zone.id} zone={zone} />
-      ))}
-      {/* AgentLayer suspends while agent_base.glb loads */}
-      <Suspense fallback={null}>
-        <AgentLayer />
-      </Suspense>
-      <SceneCamera />
-    </Canvas>
-  )
+// Utility: small flat pill with centered text
+function drawPill(ctx, text, cx, cy, textColor) {
+  ctx.save()
+  ctx.font = '600 9px Inter, system-ui, sans-serif'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  const w = ctx.measureText(text).width + 10
+  const h = 14
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.95)'
+  ctx.strokeStyle = '#D0D0C8'
+  ctx.lineWidth = 1
+  drawRoundedRect(ctx, cx - w / 2, cy - h / 2, w, h, 4)
+  ctx.fill()
+  ctx.stroke()
+  ctx.fillStyle = textColor
+  ctx.fillText(text, cx, cy)
+  ctx.restore()
 }

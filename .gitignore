@@ -5,3 +5,8 @@ node_modules/
 .DS_Store
 backend/venv/
 mixamo-exports/
+
+backend/ecosim.db
+backend/*.log
+backend/simulation/checkpoints/
+*.bak
