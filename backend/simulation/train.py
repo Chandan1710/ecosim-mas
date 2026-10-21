@@ -27,6 +27,7 @@ Design decisions
 Usage (from backend/ directory, with venv active):
   python -m simulation.train
   python -m simulation.train --iterations 5 --output-dir simulation/checkpoints
+  python -m simulation.train --iterations 150 --train-batch-size 2000 --max-steps 30
 
 The run_training() function is also importable for use in tests.
 """
@@ -89,6 +90,8 @@ def run_training(
     num_iterations: int = 3,
     checkpoint_dir: Optional[str] = None,
     seed: int = 42,
+    train_batch_size: int = 200,
+    max_steps: int = 50,
 ) -> str:
     """
     Build and run a short PPO training loop.
@@ -101,6 +104,12 @@ def run_training(
         Where to save the checkpoint. Defaults to DEFAULT_CHECKPOINT_DIR.
     seed : int
         RNG seed for reproducibility.
+    train_batch_size : int
+        Environment steps collected per PPO iteration. The default (200) only
+        proves the pipeline runs; use 2000+ with many iterations for policies
+        that actually learn something.
+    max_steps : int
+        Episode horizon used in the training env (the live stream uses 30).
 
     Returns
     -------
@@ -142,7 +151,7 @@ def run_training(
     # ── 3. Register the env ────────────────────────────────────────────────
     env_config = {
         "personas": personas,
-        "max_steps": 50,
+        "max_steps": max_steps,
         "seed": seed,
     }
     register_env(
@@ -170,7 +179,7 @@ def run_training(
             rollout_fragment_length=50,
         )
         .training(
-            train_batch_size=200,
+            train_batch_size=train_batch_size,
             num_epochs=2,             # formerly num_sgd_iter
             lr=5e-4,
             gamma=0.95,
@@ -191,8 +200,17 @@ def run_training(
     print(f"\n[train.py] Starting {num_iterations} PPO iteration(s) ...")
     for i in range(num_iterations):
         result = algo.train()
-        ep_rew = result.get("env_runners", {}).get("episode_reward_mean", "n/a")
-        print(f"  Iteration {i+1}/{num_iterations} — episode_reward_mean={ep_rew}")
+        # The new RLlib API stack reports "episode_return_mean"; older stacks
+        # used "episode_reward_mean". Accept either so progress is visible.
+        runners = result.get("env_runners", {}) or {}
+        ep_rew = runners.get("episode_return_mean", runners.get("episode_reward_mean", "n/a"))
+        ep_len = runners.get("episode_len_mean", "n/a")
+        if isinstance(ep_rew, float):
+            ep_rew = f"{ep_rew:.3f}"
+        if isinstance(ep_len, float):
+            ep_len = f"{ep_len:.1f}"
+        print(f"  Iteration {i+1}/{num_iterations} — episode_return_mean={ep_rew} "
+              f"episode_len_mean={ep_len}")
 
     # ── 7. Save checkpoint ────────────────────────────────────────────────
     save_result = algo.save(checkpoint_dir)
@@ -219,13 +237,26 @@ def run_training(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="EcoSim-MAS RLlib PPO training (module 5)")
     parser.add_argument("--iterations", type=int, default=3, help="Training iterations")
-    parser.add_argument("--output-dir", type=str, default=DEFAULT_CHECKPOINT_DIR)
+    parser.add_argument("--output-dir", type=str, default=None,
+                        help="Where to save. Default: simulation/checkpoints/run_<timestamp> "
+                             "(a fresh folder per run so checkpoints never overwrite each other).")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--train-batch-size", type=int, default=200,
+                        help="Env steps per iteration (try 2000 for a real run).")
+    parser.add_argument("--max-steps", type=int, default=50, help="Training episode horizon.")
     args = parser.parse_args()
+
+    if args.output_dir is None:
+        import time
+        args.output_dir = os.path.join(
+            DEFAULT_CHECKPOINT_DIR, time.strftime("run_%Y%m%d_%H%M%S")
+        )
 
     path = run_training(
         num_iterations=args.iterations,
         checkpoint_dir=args.output_dir,
         seed=args.seed,
+        train_batch_size=args.train_batch_size,
+        max_steps=args.max_steps,
     )
     print(f"Done. Checkpoint at: {path}")

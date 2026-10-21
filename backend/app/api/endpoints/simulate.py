@@ -20,11 +20,16 @@ a real concurrent async runtime to schedule both producer and consumer;
 the inline WebSocket driver is equivalent in practice for this single-node
 deployment and is far more transparent.
 
+Policy selection (simulation/policy_runtime.py):
+  Actions come from the trained per-persona RLlib policies (module 5) when a
+  checkpoint exists under simulation/checkpoints (or ECOSIM_CHECKPOINT). If
+  there is no checkpoint, Ray/torch can't be imported, or ECOSIM_POLICY=random
+  is set, the stream falls back to uniform-random sampling. Every tick message
+  carries "policy": "rllib" | "random" so the client can tell which is live.
+
 Known scope limits (deliberate, documented):
-  1. RANDOM POLICY: Agent actions are sampled uniformly from the action
-     space rather than using the trained RLlib checkpoint from module 5.
-     Loading and serving RLlib inference live requires a separate wiring
-     pass once this streaming layer is proven stable.
+  1. A freshly trained-for-a-few-iterations checkpoint behaves close to random;
+     meaningful behaviour needs a longer training run (see simulation/train.py).
   2. IN-MEMORY RUN REGISTRY: Active envs are tracked in a plain dict.
      This works for a single-process server but will not survive a restart
      or scale across multiple workers. Redis pub/sub is the right
@@ -46,6 +51,7 @@ from simulation.env_factory import personas_from_db
 from simulation.ecosim_env import EcoSimEnv
 from app.services.memory import store_episode
 from ml.predict import predict_risk_score
+from simulation.policy_runtime import PolicyRunner
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +61,19 @@ router = APIRouter()
 # Maps run_id → dict containing {"env": EcoSimEnv, "base_essential_pressure": float}
 ACTIVE_RUNS: Dict[str, dict] = {}
 
-_TICK_DELAY_SECONDS = 0.01   # yield between ticks so the event loop stays responsive
+_TICK_DELAY_SECONDS = 1.2   # yield between ticks so the event loop stays responsive
+
+# ── Policy runner (loaded once, lazily; see simulation/policy_runtime.py) ─────
+_POLICY_RUNNER: Optional[PolicyRunner] = None
+
+
+def get_policy_runner() -> PolicyRunner:
+    """Return the process-wide PolicyRunner, loading it on first use."""
+    global _POLICY_RUNNER
+    if _POLICY_RUNNER is None:
+        _POLICY_RUNNER = PolicyRunner.load()
+        logger.info("Simulation policy: %s", _POLICY_RUNNER.describe())
+    return _POLICY_RUNNER
 
 
 # ── Request / Response models ─────────────────────────────────────────────────
@@ -149,8 +167,8 @@ async def start_simulation(scenario_id: int):
 
     Connect to GET /ws/simulate/{run_id} to begin streaming tick results.
 
-    NOTE: Agent actions use a RANDOM policy (not trained RLlib checkpoint).
-    See module-level docstring for the deliberate scope rationale.
+    Agent actions come from the trained RLlib policies when a checkpoint is
+    available, otherwise a random policy — see the module docstring.
     """
     db = SessionLocal()
     try:
@@ -194,10 +212,14 @@ async def start_simulation(scenario_id: int):
     env = EcoSimEnv(personas=personas, initial_macro=initial_macro, max_steps=30)
     base_essential_pressure = _get_essential_pressure_from_deltas(chain_record.chain)
 
+    # Loading RLlib/torch can take seconds the first time — keep it off the loop.
+    runner = await asyncio.to_thread(get_policy_runner)
+
     run_id = str(uuid.uuid4())
     ACTIVE_RUNS[run_id] = {
         "env": env,
         "base_essential_pressure": base_essential_pressure,
+        "runner": runner,
     }
 
     return SimulateStartResponse(
@@ -205,7 +227,7 @@ async def start_simulation(scenario_id: int):
         scenario_id=scenario_id,
         message=(
             "Simulation prepared. Connect to /ws/simulate/{run_id} to stream results. "
-            "NOTE: Using random policy (not trained RLlib checkpoint) — see module 9 scope notes."
+            f"Policy: {runner.describe()}"
         ),
     )
 
@@ -226,7 +248,7 @@ async def simulate_ws(websocket: WebSocket, run_id: str):
     A final {"status": "simulation_complete"} message is sent when the
     episode ends, then the WebSocket closes cleanly.
 
-    Policy: RANDOM — see module-level docstring for deliberate scope note.
+    Policy: trained RLlib policies or random fallback — "policy" field says which.
     Memory: each agent's (event, action, outcome) is persisted to Qdrant
             (module 7) after every tick.
     """
@@ -237,7 +259,8 @@ async def simulate_ws(websocket: WebSocket, run_id: str):
     run_state = ACTIVE_RUNS.pop(run_id)   # take ownership; allows GC after run
     env = run_state["env"]
     base_essential_pressure = run_state["base_essential_pressure"]
-    
+    runner = run_state.get("runner") or get_policy_runner()
+
     await websocket.accept()
 
     # Initialize post-processing state per agent (needs state, zones)
@@ -263,11 +286,8 @@ async def simulate_ws(websocket: WebSocket, run_id: str):
             if not env.agents:
                 break
 
-            # ── 1. Select actions (RANDOM policy — deliberate scope limit) ──
-            actions = {
-                agent_id: env.action_space(agent_id).sample()
-                for agent_id in env.agents
-            }
+            # ── 1. Select actions (trained RLlib policies, or random fallback) ──
+            actions = runner.select_actions(env, observations)
 
             # ── 2. Step the environment ──────────────────────────────────────
             observations, rewards, terminations, truncations, infos = env.step(actions)
@@ -432,6 +452,7 @@ async def simulate_ws(websocket: WebSocket, run_id: str):
                 "macro_state":      macro_now,
                 "risk_score":       risk_score,
                 "active_agents":    len(actions.keys()),
+                "policy":           runner.mode,
             }
             await websocket.send_json(tick_message)
             await asyncio.sleep(_TICK_DELAY_SECONDS)

@@ -13,9 +13,15 @@ Strategy
 """
 
 import json
+import os
 import pytest
 from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
+
+# These tests control agent actions by patching EcoSimEnv.action_space, which only
+# the RANDOM policy path uses. Pin it so a trained checkpoint on this machine
+# can't change their results. (Set before any run starts; the policy loads lazily.)
+os.environ["ECOSIM_POLICY"] = "random"
 
 from app.main import app
 from db.session import SessionLocal
