@@ -85,6 +85,21 @@ def _save_only_space():
 
 
 
+MOCK_DELTAS = {
+    "discretionary_spend_pct": -0.05, "savings_rate_pct": 0.02,
+    "essential_cost_index_pct": 0.03, "credit_availability_pct": -0.02,
+}
+
+
+@pytest.fixture(autouse=True)
+def _no_real_mapper_calls():
+    """simulate/start maps un-mapped chain nodes with the LLM mapper (module 6).
+    Replace it with a deterministic stub so tests never call Groq/Ollama."""
+    with patch("app.api.endpoints.simulate.map_node_to_deltas",
+               side_effect=lambda node, **kw: {"deltas": dict(MOCK_DELTAS)}):
+        yield
+
+
 # ── Tests ─────────────────────────────────────────────────────────────────────
 
 def test_simulation_run_streams_ticks():
@@ -323,3 +338,28 @@ def test_peer_influence_nudge():
                     break
             
             assert found_pair, "Agents did not co-locate despite default Workplace assignment."
+
+
+def test_start_maps_persists_and_applies_shock():
+    """The scenario's chain gets numeric deltas, they are saved, and they become the run's shock."""
+    db = SessionLocal()
+    try:
+        scenario_id, chain_id = _seed_scenario_and_chain(db)
+    finally:
+        db.close()
+
+    client = TestClient(app)
+    with patch("app.api.endpoints.simulate.personas_from_db",
+               return_value=personas_from_fixtures(PERSONAS_FIXTURE)):
+        resp = client.post(f"/scenarios/{scenario_id}/simulate/start")
+    assert resp.status_code == 200
+    shock = resp.json()["shock"]
+    assert shock["essential_cost"] > 0          # 12 nodes x +0.03, clamped
+    assert shock["demand"] < 0
+
+    db = SessionLocal()
+    try:
+        saved = db.query(CausalChain).filter(CausalChain.id == chain_id).first().chain
+    finally:
+        db.close()
+    assert all("deltas" in n for n in saved), "deltas should be persisted on the chain"

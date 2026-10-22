@@ -1,114 +1,123 @@
 /**
- * App — root layout shell for EcoSim-MAS dashboard (Module 11).
+ * App — root shell for EcoSim-MAS.
  *
- * Header with simulation controls + Live 2D World Scene.
+ * Three views:
+ *   home   : start a town run from a ready-made shock, or open a saved run
+ *   intake : describe your own scenario (Module 2) — it becomes the town's shock
+ *   agents : profiles of everyone who lives in the town
+ *   propagation: how each scenario spreads, as an editable chain of events (ready-made, yours, drafts)
+ *   history: every saved run, with replay, PDF reports and the raw event log
+ *   town   : the live / replayed town of generative agents (§7.6)
+ *
+ * The earlier 10-agent RL world (ZoneScene) remains in the codebase as the
+ * baseline it is compared against; the app now opens the town.
  */
 
 import React, { useState } from 'react'
 import './index.css'
-import ZoneScene from './ZoneScene'
+import IntakeFlow from './IntakeFlow'
+import TownHome from './TownHome'
+import TownView from './TownView'
+import Sidebar from './Sidebar'
+import AgentsPage from './AgentsPage'
+import ThemeSwitch from './ThemeSwitch'
+import Logo from './Logo'
+import RunHistoryPage from './RunHistoryPage'
+import PropagationPage from './PropagationPage'
+import DashboardPage from './DashboardPage'
+import ValidationPage from './ValidationPage'
+
+// A link like /?run=<run_id> opens that run directly. Read once at module load
+// (StrictMode runs initialisers twice in dev) and strip it from the URL.
+function runFromUrl() {
+  try {
+    const params = new URLSearchParams(window.location.search)
+    const runId = params.get('run')
+    if (!runId) return null
+    window.history.replaceState(null, '', window.location.pathname)
+    return runId
+  } catch {
+    return null
+  }
+}
+const INITIAL_RUN = runFromUrl()
 
 export default function App() {
-  const [runIdInput, setRunIdInput] = useState('')
-  const [activeRunId, setActiveRunId] = useState(null)
-  const [simStatus, setSimStatus] = useState('idle')
-  const [currentTick, setCurrentTick] = useState(null)
+  const [view, setView] = useState(INITIAL_RUN ? 'town' : 'home')
+  const [runId, setRunId] = useState(INITIAL_RUN)
+  const [days, setDays] = useState(7)
+  const [agentFocus, setAgentFocus] = useState(null) // a resident to open when the profiles page shows
+  const [resume, setResume] = useState(null) // a saved scenario reopened in the chain studio
+  const seed = 7 // the same 20 residents every time, so runs are comparable
 
-  const handleConnect = (e) => {
-    e.preventDefault()
-    if (runIdInput.trim()) {
-      setActiveRunId(runIdInput.trim())
-    }
+  const open = (id) => {
+    setRunId(id)
+    setView('town')
   }
 
-  const handleTickUpdate = (data) => {
-    if (data && data.tick !== undefined) {
-      setCurrentTick(data.tick)
-    }
+  // the logo always leads home; if you are already there it scrolls back to the top
+  const goHome = () => {
+    if (view === 'home') document.querySelector('.home')?.scrollTo({ top: 0, behavior: 'smooth' })
+    else setView('home')
   }
 
   return (
     <div className="app-shell">
       <header className="app-header">
-        <div className="app-header__dot" aria-hidden="true" />
-        <span className="app-header__wordmark">EcoSim-MAS</span>
-        <span className="app-header__subtitle" style={{ marginLeft: '8px', color: '#6B6B68' }}>
-          2D Simulation World
-        </span>
-
-        {/* Status indicator */}
-        <div style={{
-          marginLeft: '20px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '6px',
-          fontSize: '12px',
-          color: simStatus === 'complete' ? '#4E8752' : (simStatus.startsWith('streaming') ? '#2F6FED' : '#6B6B68'),
-          background: '#FFFFFF',
-          border: '1px solid #E5E5E0',
-          padding: '3px 10px',
-          borderRadius: '16px',
-        }}>
-          <span style={{
-            width: '6px',
-            height: '6px',
-            borderRadius: '50%',
-            backgroundColor: simStatus === 'complete' ? '#4E8752' : (simStatus.startsWith('streaming') ? '#2F6FED' : '#B0B0A8'),
-          }} />
-          <span style={{ textTransform: 'capitalize' }}>
-            {simStatus === 'idle' ? 'Ready' : simStatus}
-          </span>
-          {currentTick !== null && (
-            <span style={{ fontWeight: 600, marginLeft: '4px' }}>
-              (Tick {currentTick})
-            </span>
+        <button type="button" className="app-header__home" onClick={goHome} title="Home">
+          <Logo />
+        </button>
+        <div className="app-header__right">
+          {view === 'intake' && (
+            <button type="button" className="app-header__btn" onClick={() => { setView(resume ? 'propagation' : 'home'); setResume(null) }}>
+              {resume ? 'Back to scenarios' : 'Back to runs'}
+            </button>
           )}
+          <ThemeSwitch />
         </div>
-
-        {/* Connect Form */}
-        <form onSubmit={handleConnect} style={{ marginLeft: 'auto', display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <input
-            type="text"
-            placeholder="Enter simulation run_id..."
-            value={runIdInput}
-            onChange={(e) => setRunIdInput(e.target.value)}
-            style={{
-              padding: '6px 10px',
-              borderRadius: '6px',
-              border: '1px solid var(--color-border)',
-              fontFamily: 'inherit',
-              fontSize: '12px',
-              width: '280px',
-              outline: 'none',
-              background: '#FFFFFF',
-            }}
-          />
-          <button
-            type="submit"
-            style={{
-              padding: '6px 14px',
-              borderRadius: '6px',
-              border: 'none',
-              background: 'var(--color-accent)',
-              color: 'white',
-              cursor: 'pointer',
-              fontSize: '12px',
-              fontWeight: 500,
-              transition: 'opacity 0.2s',
-            }}
-          >
-            Connect
-          </button>
-        </form>
       </header>
 
-      <main className="app-canvas-wrap">
-        <ZoneScene
-          runId={activeRunId}
-          onTickUpdate={handleTickUpdate}
-          onStatusChange={setSimStatus}
-        />
-      </main>
+      <div className="app-body">
+        {view !== 'town' && (
+          <Sidebar
+            active={view === 'intake' && resume ? 'propagation' : ['dashboard', 'agents', 'history', 'propagation', 'validation'].includes(view) ? view : 'home'}
+            onNavigate={(id) => { setResume(null); setAgentFocus(null); setView(id) }}
+          />
+        )}
+        <main className="app-canvas-wrap">
+          {view === 'home' && (
+            <TownHome onOpen={open} onDescribe={() => { setResume(null); setView('intake') }} onViewAll={() => setView('history')} days={days} setDays={setDays} seed={seed} />
+          )}
+          {view === 'dashboard' && (
+            <DashboardPage
+              lastRunId={runId} onOpenRun={open} onHome={() => setView('home')}
+              onOpenAgent={(id) => { setAgentFocus(id); setView('agents') }}
+              onOpenValidation={(id) => { try { sessionStorage.setItem('ecosim-val-run', id) } catch { /* private window */ } setView('validation') }}
+              onOpenScenario={(key) => { try { sessionStorage.setItem('ecosim-prop', key) } catch { /* private window */ } setView('propagation') }}
+            />
+          )}
+          {view === 'validation' && (
+            <ValidationPage onOpenDashboard={(id) => { try { sessionStorage.setItem('ecosim-dash-run', id) } catch { /* private window */ } setView('dashboard') }} />
+          )}
+          {view === 'agents' && <AgentsPage key={agentFocus || 'all'} initialOpen={agentFocus} />}
+          {view === 'history' && <RunHistoryPage onOpen={open} />}
+          {view === 'propagation' && (
+            <PropagationPage
+              onOpenRun={open} days={days} seed={Number(seed) || 7}
+              onEdit={(rec) => { setResume(rec); setView('intake') }}
+              onDescribe={() => { setResume(null); setView('intake') }}
+            />
+          )}
+          {view === 'intake' && (
+            <IntakeFlow
+              key={resume ? resume.key : 'new'} resume={resume} runOptions={{ days, seed: Number(seed) || 7 }}
+              onStarted={(r) => { setResume(null); open(r.runId) }} onOpenRun={open}
+              onExit={() => { setResume(null); setView('propagation') }}
+            />
+          )}
+          {view === 'town' && runId && <TownView key={runId} runId={runId} onExit={() => setView('home')} />}
+        </main>
+      </div>
     </div>
   )
 }

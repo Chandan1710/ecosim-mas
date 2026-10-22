@@ -122,19 +122,18 @@ const ZONES = {
 // Agent sprite coordinate: row 5, col 0 in character sheet
 const AGENT_SPRITE = { row: 5, col: 0 }
 
-// Offsets within a zone so multiple co-located agents have clear spacing without label collisions
-const AGENT_SLOT_OFFSETS = [
-  { x: -54, y: 34 },
-  { x:  54, y: 34 },
-  { x:   0, y: 72 },
-  { x: -64, y: 110 },
-  { x:  64, y: 110 },
-  { x:   0, y: 146 },
-  { x: -90, y: 72 },
-  { x:  90, y: 72 },
-  { x: -90, y: 146 },
-  { x:  90, y: 146 },
-]
+// Slots inside a zone: a two-column grid. Slot s -> column s % 2, row floor(s / 2).
+// Slots are handed out by OCCUPANCY (first free slot in the zone), not by persona
+// index, so a crowded zone fills neatly top-to-bottom instead of piling labels up.
+const SLOT_COLS = [-62, 62]
+const SLOT_ROW_Y0 = 34
+const SLOT_ROW_GAP = 38
+function slotOffset(slotIndex) {
+  return {
+    x: SLOT_COLS[slotIndex % 2],
+    y: SLOT_ROW_Y0 + SLOT_ROW_GAP * Math.floor(slotIndex / 2),
+  }
+}
 
 // Action type visual styling (§9.1, §9.2)
 const ACTION_STYLES = {
@@ -147,11 +146,13 @@ const ACTION_STYLES = {
 const ZONE_KEYS = Object.keys(ZONES)
 
 function getInitialAgents() {
+  const usedSlots = {}
   return PERSONAS.map((name, index) => {
     const aid = personaSlug(name)
     const initialZoneKey = ZONE_KEYS[index % ZONE_KEYS.length]
     const zone = ZONES[initialZoneKey]
-    const slot = AGENT_SLOT_OFFSETS[index % AGENT_SLOT_OFFSETS.length]
+    const slotIndex = (usedSlots[initialZoneKey] = (usedSlots[initialZoneKey] ?? -1) + 1)
+    const slot = slotOffset(slotIndex)
     const startX = zone.x + slot.x
     const startY = zone.y + slot.y
 
@@ -160,6 +161,8 @@ function getInitialAgents() {
       name,
       index,
       zoneKey: initialZoneKey,
+      slotZone: initialZoneKey, // zone whose slot this agent occupies (stays set when frozen)
+      slot: slotIndex,
       currentX: startX,
       currentY: startY,
       targetX: startX,
@@ -267,6 +270,7 @@ export default function ZoneScene({ runId, onTickUpdate, onStatusChange }) {
         const agentActions = data.agent_actions || {}
         const needsState = data.needs_state || {}
 
+        const movers = []
         agentsRef.current.forEach((agent) => {
           const aid = agent.id
 
@@ -292,16 +296,37 @@ export default function ZoneScene({ runId, onTickUpdate, onStatusChange }) {
           if (assignedZone && !ZONES[assignedZone]) {
             console.warn(`[ZoneScene] Unknown zone "${zoneAssignments[aid]}" for agent ${aid}`)
           }
-          if (assignedZone && ZONES[assignedZone]) {
-            agent.zoneKey = assignedZone
-            const targetZone = ZONES[assignedZone]
-            const slot = AGENT_SLOT_OFFSETS[agent.index % AGENT_SLOT_OFFSETS.length]
-
-            if (!agent.isTerminated) {
-              agent.targetX = targetZone.x + slot.x
-              agent.targetY = targetZone.y + slot.y
-            }
+          // An agent that defaulted this tick freezes where it stands (no move).
+          if (assignedZone && ZONES[assignedZone] && !agent.isTerminated) {
+            movers.push({ agent, zoneKey: assignedZone })
           }
+        })
+
+        // Slot allocation by occupancy (sticky: an agent that stays in its zone keeps
+        // its slot; one that leaves frees it; arrivals take the lowest free slot).
+        // Frozen agents keep their slot forever, so nobody is placed on top of them.
+        const taken = {}
+        agentsRef.current.forEach((a) => {
+          if (a.slotZone != null) (taken[a.slotZone] = taken[a.slotZone] || new Set()).add(a.slot)
+        })
+        movers.forEach(({ agent, zoneKey }) => {
+          if (agent.slotZone === zoneKey) return
+          taken[agent.slotZone]?.delete(agent.slot)
+          agent.slotZone = null
+        })
+        movers.forEach(({ agent, zoneKey }) => {
+          agent.zoneKey = zoneKey
+          if (agent.slotZone === zoneKey) return
+          const used = (taken[zoneKey] = taken[zoneKey] || new Set())
+          let slotIndex = 0
+          while (used.has(slotIndex)) slotIndex++
+          used.add(slotIndex)
+          agent.slotZone = zoneKey
+          agent.slot = slotIndex
+          const zone = ZONES[zoneKey]
+          const off = slotOffset(slotIndex)
+          agent.targetX = zone.x + off.x
+          agent.targetY = zone.y + off.y
         })
         // ── Co-located pairs for THIS tick only (§7.5) ───────────────────
         const agentById = {}
@@ -401,7 +426,7 @@ export default function ZoneScene({ runId, onTickUpdate, onStatusChange }) {
 
         // Zone area background card
         const cardW = 170
-        const cardH = 180
+        const cardH = 244
         const cardX = x - cardW / 2
         const cardY = y - 36
 
@@ -631,11 +656,10 @@ export default function ZoneScene({ runId, onTickUpdate, onStatusChange }) {
       <canvas
         ref={canvasRef}
         width={1020}
-        height={660}
+        height={800}
         style={{
           maxWidth: '100%',
           maxHeight: '100%',
-          boxShadow: '0 2px 16px rgba(0,0,0,0.06)',
           borderRadius: '8px',
           border: '1px solid #E5E5E0',
           background: '#FAFAF8',

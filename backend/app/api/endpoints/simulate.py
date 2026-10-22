@@ -39,7 +39,8 @@ Known scope limits (deliberate, documented):
 import asyncio
 import logging
 import uuid
-from typing import Dict, Optional
+from concurrent.futures import ThreadPoolExecutor
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
@@ -52,6 +53,8 @@ from simulation.ecosim_env import EcoSimEnv
 from app.services.memory import store_episode
 from ml.predict import predict_risk_score
 from simulation.policy_runtime import PolicyRunner
+from simulation.shock import Shock, macro_from_shock, shock_from_deltas, describe as describe_shock
+from app.services.llm import map_node_to_deltas
 
 logger = logging.getLogger(__name__)
 
@@ -82,69 +85,76 @@ class SimulateStartResponse(BaseModel):
     run_id: str
     scenario_id: int
     message: str
+    shock: Optional[dict] = None   # the numeric shock this run applies to every agent
 
 
-# ── Helper: build initial_macro from mapped deltas ────────────────────────────
+# ── Helpers: scenario -> mapped deltas -> Shock ───────────────────────────────
 
 def _build_initial_macro(mapped_nodes: list) -> Dict[str, float]:
-    """
-    Aggregate the per-node deltas from the Semantic-to-Numerical Mapper
-    (module 6) into a single macro state dict that seeds EcoSimEnv.
-
-    Deltas are summed across all nodes and applied as offsets on top of
-    sensible Indian macro baseline values (RBI-era rates as of 2023).
-    Outputs are clamped to sane ranges.
-    """
-    base = {
-        "inflation_rate":    5.5,
-        "repo_rate":         6.5,
-        "fuel_price_index": 110.0,
-    }
-
-    total_essential    = 0.0
-    total_credit       = 0.0
-    total_discretionary = 0.0
-
-    for node in mapped_nodes:
-        deltas = node.get("deltas", {}) if isinstance(node, dict) else node.deltas
-        if isinstance(deltas, dict):
-            total_essential     += deltas.get("essential_cost_index_pct", 0.0)
-            total_credit        += deltas.get("credit_availability_pct",  0.0)
-            total_discretionary += deltas.get("discretionary_spend_pct",  0.0)
-        else:
-            total_essential     += getattr(deltas, "essential_cost_index_pct", 0.0)
-            total_credit        += getattr(deltas, "credit_availability_pct",  0.0)
-            total_discretionary += getattr(deltas, "discretionary_spend_pct",  0.0)
-
-    # Map deltas to macro state:
-    # - rising essential costs → higher inflation
-    # - tighter credit → higher repo rate
-    # - discretionary spend change → adjusts fuel index (proxy for consumer demand)
-    inflation = base["inflation_rate"] + total_essential * 3.0
-    repo      = base["repo_rate"]      - total_credit   * 2.0
-    fuel      = base["fuel_price_index"] + total_discretionary * 5.0
-
-    return {
-        "inflation_rate":    max(0.0, min(25.0, inflation)),
-        "repo_rate":         max(0.0, min(20.0, repo)),
-        "fuel_price_index":  max(50.0, min(250.0, fuel)),
-    }
+    """Starting macro state implied by the chain's mapped deltas (see simulation/shock.py)."""
+    return macro_from_shock(shock_from_deltas(mapped_nodes))
 
 
 def _get_essential_pressure_from_deltas(mapped_nodes: list) -> float:
+    """Baseline essential_pressure [0,1] implied by the chain's essential-cost deltas."""
+    return max(0.0, min(1.0, 0.5 + shock_from_deltas(mapped_nodes).essential_cost))
+
+
+def _essential_pressure(shock: Shock, financial_literacy: float, liquidity: float) -> float:
     """
-    Extract a baseline essential_pressure [0,1] directly from the causal chain's
-    essential_cost_index_pct deltas.
+    Per-agent essential_pressure [0,1] (§9.3): how squeezed this agent is by the
+    cost of essentials right now. Rises with the scenario's essential-cost shock
+    (more for low-literacy personas, who have thinner margins — same exposure
+    weight the environment uses) and as the agent's own liquidity runs low.
+    Zero shock + healthy liquidity -> ~0.25, well below the 0.7 Grocery trigger.
     """
-    total_essential = 0.0
-    for node in mapped_nodes:
-        deltas = node.get("deltas", {}) if isinstance(node, dict) else node.deltas
-        if isinstance(deltas, dict):
-            total_essential += deltas.get("essential_cost_index_pct", 0.0)
-        else:
-            total_essential += getattr(deltas, "essential_cost_index_pct", 0.0)
-    # Start around 0.5; e.g. +10% cost index -> 0.6 pressure
-    return max(0.0, min(1.0, 0.5 + total_essential))
+    exposure = 0.6 + 0.8 * (1.0 - financial_literacy)
+    pressure = (0.25
+                + 0.9 * max(0.0, shock.essential_cost) * exposure
+                + 0.35 * max(0.0, 0.6 - liquidity))
+    return max(0.0, min(1.0, pressure))
+
+
+def _ensure_mapped_chain(chain_id: int) -> List[dict]:
+    """
+    Return the chain's nodes with numeric deltas attached, mapping any node that
+    lacks them (module 6: Groq -> Ollama -> mock) and SAVING the result back to the
+    causal_chains row, so a scenario always yields the same shock on later runs.
+
+    Previously simulate/start read `node["deltas"]` from a stored chain that never
+    had any (the mapper endpoint returned deltas without persisting them), so every
+    scenario silently started from the neutral baseline.
+    """
+    db = SessionLocal()
+    try:
+        record = db.query(CausalChain).filter(CausalChain.id == chain_id).first()
+        nodes = [dict(n) for n in (record.chain or [])]
+        missing = [n for n in nodes if "deltas" not in n]
+        if not missing:
+            return nodes
+
+        def _map(node: dict):
+            try:
+                return node["node_id"], map_node_to_deltas(node=node)["deltas"]
+            except Exception as exc:
+                logger.warning("Mapping node %s failed (%s); treating as no shock", node.get("node_id"), exc)
+                return node["node_id"], None
+
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            results = dict(pool.map(_map, missing))
+
+        mapped_any = False
+        for node in nodes:
+            deltas = results.get(node["node_id"])
+            if deltas is not None:
+                node["deltas"] = deltas
+                mapped_any = True
+        if mapped_any:
+            record.chain = nodes          # reassign so SQLAlchemy sees the JSON change
+            db.commit()
+        return nodes
+    finally:
+        db.close()
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -193,9 +203,13 @@ async def start_simulation(scenario_id: int):
     finally:
         db.close()
 
-    # Build initial_macro from the chain nodes stored as plain dicts
-    initial_macro = _build_initial_macro(chain_record.chain)
-    logger.info("Scenario %d: initial_macro = %s", scenario_id, initial_macro)
+    # Map the chain to numeric deltas (and persist them), then collapse to one Shock
+    # that the environment applies to every agent's budget each tick.
+    mapped_nodes = await asyncio.to_thread(_ensure_mapped_chain, chain_record.id)
+    shock = shock_from_deltas(mapped_nodes)
+    initial_macro = macro_from_shock(shock)
+    logger.info("Scenario %d: shock = %s | initial_macro = %s",
+                scenario_id, describe_shock(shock), initial_macro)
 
     # Load personas from DB
     try:
@@ -209,8 +223,8 @@ async def start_simulation(scenario_id: int):
             ),
         )
 
-    env = EcoSimEnv(personas=personas, initial_macro=initial_macro, max_steps=30)
-    base_essential_pressure = _get_essential_pressure_from_deltas(chain_record.chain)
+    env = EcoSimEnv(personas=personas, initial_macro=initial_macro, max_steps=30, shock=shock)
+    base_essential_pressure = max(0.0, min(1.0, 0.5 + shock.essential_cost))
 
     # Loading RLlib/torch can take seconds the first time — keep it off the loop.
     runner = await asyncio.to_thread(get_policy_runner)
@@ -220,14 +234,16 @@ async def start_simulation(scenario_id: int):
         "env": env,
         "base_essential_pressure": base_essential_pressure,
         "runner": runner,
+        "shock": shock,
     }
 
     return SimulateStartResponse(
         run_id=run_id,
         scenario_id=scenario_id,
+        shock=shock.to_dict(),
         message=(
             "Simulation prepared. Connect to /ws/simulate/{run_id} to stream results. "
-            f"Policy: {runner.describe()}"
+            f"Shock: {describe_shock(shock)}. Policy: {runner.describe()}"
         ),
     )
 
@@ -260,6 +276,7 @@ async def simulate_ws(websocket: WebSocket, run_id: str):
     env = run_state["env"]
     base_essential_pressure = run_state["base_essential_pressure"]
     runner = run_state.get("runner") or get_policy_runner()
+    shock = run_state.get("shock") or Shock()
 
     await websocket.accept()
 
@@ -271,7 +288,7 @@ async def simulate_ws(websocket: WebSocket, run_id: str):
         bias = persona.spending_bias if persona else 0.5
         agent_states[aid] = {
             "budget_anxiety": 0.5,
-            "essential_pressure": base_essential_pressure,
+            "essential_pressure": _essential_pressure(shock, fin_lit, 1.0),
             "discretionary_appetite": 0.5 * bias,
             "zone": "Home",
             "zone_history": [],
@@ -292,6 +309,12 @@ async def simulate_ws(websocket: WebSocket, run_id: str):
             # ── 2. Step the environment ──────────────────────────────────────
             observations, rewards, terminations, truncations, infos = env.step(actions)
 
+            # An agent forced into default by insolvency (ran out of cash) is shown as
+            # a Default so the client freezes it and peers perceive it as one.
+            for aid in list(actions):
+                if infos.get(aid, {}).get("forced_default"):
+                    actions[aid] = (2, actions[aid][1])
+
             # ── 2a. Needs State Update (Post-processing layer, §9.3) ─────────
             for aid, action in actions.items():
                 state = agent_states[aid]
@@ -300,6 +323,8 @@ async def simulate_ws(websocket: WebSocket, run_id: str):
                 
                 # Update budget_anxiety based on action and current liquidity
                 liquidity = infos.get(aid, {}).get("liquidity", 1.0)
+                state["essential_pressure"] = _essential_pressure(
+                    shock, state["financial_literacy"], liquidity)
                 if mag > 0.3 and liquidity < 0.3:
                     state["budget_anxiety"] = min(1.0, state["budget_anxiety"] + 0.1)
                 else:
@@ -453,6 +478,7 @@ async def simulate_ws(websocket: WebSocket, run_id: str):
                 "risk_score":       risk_score,
                 "active_agents":    len(actions.keys()),
                 "policy":           runner.mode,
+                "shock":            shock.to_dict(),
             }
             await websocket.send_json(tick_message)
             await asyncio.sleep(_TICK_DELAY_SECONDS)

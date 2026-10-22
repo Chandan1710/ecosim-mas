@@ -1,0 +1,93 @@
+/* Agent profiles page */
+.agents { height: 100%; overflow-y: auto; padding: 44px 32px 64px; scroll-behavior: auto; }
+.agents__inner { max-width: 1080px; margin: 0 auto; }
+.agents__title { font-size: clamp(26px, 3vw, 34px); line-height: 1.1; letter-spacing: -0.02em; font-weight: var(--font-medium); margin-bottom: 10px; }
+.agents__lede { font-size: 15px; color: var(--color-muted); max-width: 640px; margin-bottom: 26px; }
+.agents__err { color: var(--crisis); font-size: 13px; margin-bottom: 16px; }
+
+.agents__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; align-items: start; }
+
+.ag {
+  background: var(--color-surface); border: var(--border); border-radius: 12px; overflow: hidden;
+  scroll-margin-top: 16px; transition: border-color 160ms ease-out;
+}
+.ag:hover { border-color: var(--color-text); }
+.ag.is-open { grid-column: 1 / -1; border-color: var(--color-accent); }
+
+.ag__head {
+  display: flex; align-items: center; gap: 14px; width: 100%; padding: 14px 16px; background: none; border: 0;
+  font: inherit; color: inherit; text-align: left; cursor: pointer;
+}
+.ag__head:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; border-radius: 12px; }
+.ag__portrait {
+  display: grid; place-items: center; flex-shrink: 0; width: 72px; height: 88px; border-radius: 8px; background: var(--portrait-bg);
+  transition: width 260ms ease-out, height 260ms ease-out;
+}
+.ag.is-open .ag__portrait { width: 112px; height: 136px; }
+.ag__canvas { image-rendering: pixelated; display: block; }
+.ag__main { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.ag__name { font-size: 16px; font-weight: var(--font-medium); }
+.ag.is-open .ag__name { font-size: 20px; letter-spacing: -0.01em; }
+.ag__role { font-size: 13px; color: var(--color-text); }
+.ag__home { font-size: 12.5px; color: var(--color-muted); }
+.ag__chev { flex-shrink: 0; color: var(--color-muted); transition: transform 260ms ease-out; }
+.ag.is-open .ag__chev { transform: rotate(180deg); color: var(--color-accent); }
+
+.ag__brief { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 16px 14px; }
+.ag__tag { font-size: 11.5px; border: var(--border); border-radius: 999px; padding: 1px 8px; color: var(--color-muted); }
+
+.ag__body { padding: 4px 20px 22px; animation: ag-in 320ms 120ms ease-out both; }
+@keyframes ag-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+.ag__bio { font-size: 14px; max-width: 760px; margin-bottom: 18px; padding-top: 14px; border-top: 1px solid var(--color-border); }
+.ag__secs { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 22px 28px; }
+.ag__sec h3 {
+  font-size: 11.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-muted);
+  font-weight: var(--font-medium); margin-bottom: 8px;
+}
+.ag__row { display: flex; justify-content: space-between; gap: 14px; padding: 5px 0; border-bottom: 1px solid var(--color-border); font-size: 13px; }
+.ag__row dt { color: var(--color-muted); flex-shrink: 0; }
+.ag__row dd { text-align: right; }
+.ag__loans { list-style: none; margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.ag__loans li { display: flex; flex-direction: column; font-size: 13px; padding: 6px 10px; border: var(--border); border-radius: 8px; }
+.ag__loans li span { color: var(--color-muted); font-size: 12.5px; }
+.ag__none { font-size: 13px; color: var(--color-muted); margin-top: 8px; }
+.ag__goals { padding-left: 18px; font-size: 13px; display: flex; flex-direction: column; gap: 6px; }
+.ag__chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ag__chip {
+  display: inline-flex; align-items: baseline; gap: 6px; font: inherit; font-size: 13px; background: var(--color-surface);
+  border: var(--border); border-radius: 999px; padding: 3px 11px; cursor: pointer; color: var(--color-text);
+}
+.ag__chip span { font-size: 11.5px; color: var(--color-muted); }
+.ag__chip:hover { border-color: var(--color-text); }
+.ag__chip:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ag, .ag__portrait, .ag__chev { transition: none; }
+  .ag__body { animation: none; }
+}
+@media (max-width: 720px) { .agents { padding: 28px 16px 48px; } .ag__head { padding: 12px; } }
+
+/* what a resident has learned from earlier runs */
+.ag__sec--wide { grid-column: 1 / -1; }
+.ag__learn { display: flex; flex-direction: column; gap: 14px; }
+.ag__learn-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+.ag__learn-k { display: block; font-size: 12px; color: var(--color-muted); margin-bottom: 4px; }
+.ag__learn-note { display: block; font-size: 12px; color: var(--color-muted); margin-top: 2px; }
+.ag__curve { display: block; }
+.ag__curve-zero { stroke: var(--color-border-strong); stroke-width: 1; stroke-dasharray: 3 3; }
+.ag__curve-line { fill: none; stroke: var(--color-accent); stroke-width: 1.6; }
+.ag__curve-dot { fill: var(--color-accent); }
+.ag__reset { font: inherit; font-size: 12px; color: var(--color-muted); background: none; border: 1px solid var(--color-border); border-radius: 999px; padding: 4px 12px; cursor: pointer; transition: color .15s, border-color .15s; }
+.ag__reset:hover { color: var(--crisis); border-color: var(--crisis); }
+.ag__lessons, .ag__infl { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.ag__lessons li { display: grid; grid-template-columns: 52px 1fr 54px; gap: 10px; align-items: start; font-size: 13px; line-height: 1.45; }
+.ag__lk { font-size: 11px; font-weight: 600; text-align: center; border-radius: 999px; padding: 2px 0; margin-top: 2px; }
+.ag__lk--do { background: var(--color-accent-soft); color: var(--color-accent); }
+.ag__lk--avoid { background: transparent; color: var(--crisis); border: 1px solid var(--crisis); }
+.ag__ls { height: 4px; border-radius: 4px; background: var(--color-border); margin-top: 9px; overflow: hidden; }
+.ag__ls i { display: block; height: 100%; background: var(--color-accent); border-radius: 4px; }
+.ag__infl { font-size: 12.5px; color: var(--color-muted); }
+.ag__infl b { color: var(--color-text); font-weight: 600; }
+.ag__chip--static { cursor: default; }
+.ag__chip--static.is-good span { color: var(--ok); }
+.ag__chip--static.is-bad span { color: var(--crisis); }

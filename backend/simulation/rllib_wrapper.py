@@ -65,6 +65,9 @@ class EcoSimRLlibEnv(MultiAgentEnv):
           - initial_macro (dict): starting macro state; default=EcoSimEnv default
           - max_steps (int): episode horizon; default=50
           - seed (int): RNG seed; default=None
+          - shock (Shock | dict): fixed scenario shock (enables economy mode)
+          - randomize_shock (bool): sample a fresh random shock every episode
+            (used for training; enables economy mode)
     """
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
@@ -74,12 +77,16 @@ class EcoSimRLlibEnv(MultiAgentEnv):
         initial_macro: Optional[Dict[str, float]] = config.get("initial_macro")
         max_steps: int = int(config.get("max_steps", 50))
         seed: Optional[int] = config.get("seed")
+        shock = config.get("shock")                        # Shock / dict / None
+        randomize_shock: bool = bool(config.get("randomize_shock", False))
 
         self._env: EcoSimEnv = make_ecosim_env(
             personas=personas,
             initial_macro=initial_macro,
             max_steps=max_steps,
             seed=seed,
+            shock=shock,
+            randomize_shock=randomize_shock,
         )
 
         # RLlib requires _agent_ids to be set before super().__init__()

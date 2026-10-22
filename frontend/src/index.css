@@ -13,6 +13,12 @@
   --color-border:   #E5E5E0;
   --color-surface:  #FFFFFF;
   --color-muted:    #6B6B68;
+  --color-border-strong: #C9C9C2;
+  --color-disabled: #A4A49C;
+  --color-accent-soft: #EEF3FE;
+  --color-accent-line: #C9D8F8;
+  --portrait-bg:    #E4F0D8;
+  color-scheme: light;
 
   /* Zone building colours — flat, no gradients */
   --zone-home:        #8B9E7E;   /* muted sage green  */
@@ -61,6 +67,29 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* ── Dark theme — same tokens, flat neutral greys, no gradients ───────────── */
+:root[data-theme='dark'] {
+  --color-bg:       #1E1E1C;
+  --color-text:     #ECECE8;
+  --color-accent:   #6E9BFF;
+  --color-border:   #3A3A37;
+  --color-surface:  #272725;
+  --color-muted:    #A5A59E;
+  --color-border-strong: #52524E;
+  --color-disabled: #6E6E69;
+  --color-accent-soft: #28324A;
+  --color-accent-line: #41558A;
+  --portrait-bg:    #32372C;
+  --color-ground:   #33332F;
+  --color-sky:      #272725;
+  --color-danger:   #E0705F;
+  --ok:             #6DB071;
+  --strain:         #D9A441;
+  --crisis:         #E0705F;
+  --hair:           #32322F;
+  color-scheme: dark;
+}
+
 /* ── Layout shell ─────────────────────────────────────────────────────────── */
 
 .app-shell {
@@ -80,20 +109,48 @@ body {
   flex-shrink: 0;
 }
 
-.app-header__wordmark {
-  font-size: 13px;
-  font-weight: var(--font-medium);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--color-text);
+.logo { display: inline-flex; align-items: center; gap: 10px; color: var(--color-text); }
+.logo__mark { display: block; flex-shrink: 0; }
+.logo__core { fill: var(--color-accent); }
+.logo__ring {
+  fill: none; stroke: var(--color-text); stroke-width: 0.9; vector-effect: non-scaling-stroke;
+  transform-box: fill-box; transform-origin: center; opacity: 0;
+  animation: logo-ring 3.6s linear infinite;
 }
+@keyframes logo-ring { 0% { transform: scale(1); opacity: 0.75; } 100% { transform: scale(var(--grow, 5.6)); opacity: 0; } }
+.logo__dot {
+  fill: var(--color-muted); opacity: 0.4; transform-box: fill-box; transform-origin: center;
+  animation: logo-dot 1.2s ease-out infinite;
+}
+@keyframes logo-dot { 0% { opacity: 1; fill: var(--color-text); transform: scale(1.9); } 45%, 100% { opacity: 0.4; fill: var(--color-muted); transform: scale(1); } }
+.logo__word { font-size: 17px; line-height: 1; font-weight: var(--font-medium); letter-spacing: -0.025em; }
+.logo__sub { margin-left: 5px; font-weight: var(--font-regular); color: var(--color-muted); letter-spacing: 0.01em; }
+.app-header__home:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 4px; border-radius: 6px; }
+@media (prefers-reduced-motion: reduce) { .logo__ring, .logo__dot { animation: none; } .logo__ring { opacity: 0.25; transform: scale(3); } }
 
-.app-header__dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--color-accent);
+.app-header__right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+
+/* light / dark switch: two flat icon buttons in one hairline pill */
+.theme-switch { position: relative; display: inline-flex; border: var(--border); border-radius: 999px; padding: 2px; gap: 2px; }
+.theme-switch__thumb {
+  position: absolute; top: 2px; left: 2px; width: 28px; height: 24px; border-radius: 999px; background: var(--color-text);
+  transition: transform 320ms cubic-bezier(0.2, 0.7, 0.2, 1), background-color 320ms ease;
 }
+.theme-switch button {
+  position: relative; display: grid; place-items: center; width: 28px; height: 24px; border: 0; border-radius: 999px;
+  background: none; color: var(--color-muted); cursor: pointer;
+  transition: color 240ms ease;
+}
+.theme-switch button:hover { color: var(--color-text); }
+.theme-switch button[aria-pressed='true'], .theme-switch button[aria-pressed='true']:hover { color: var(--color-bg); }
+.theme-switch button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+
+/* theme change: cross-fade the page (View Transitions), or fade colours where unsupported */
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: 380ms; animation-timing-function: ease; }
+.theme-fade, .theme-fade *, .theme-fade *::before, .theme-fade *::after {
+  transition: background-color 380ms ease, color 380ms ease, border-color 380ms ease, fill 380ms ease, stroke 380ms ease !important;
+}
+@media (prefers-reduced-motion: reduce) { .theme-switch button, .theme-switch__thumb { transition: none; } ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; } }
 
 .app-header__subtitle {
   font-size: 12px;
@@ -101,10 +158,17 @@ body {
   margin-left: auto;
 }
 
+.app-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
 .app-canvas-wrap {
   flex: 1;
   position: relative;
   min-height: 0;
+  min-width: 0;
 }
 
 /* ── Zone label overlay (HTML over canvas) ───────────────────────────────── */

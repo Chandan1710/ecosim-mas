@@ -92,6 +92,7 @@ def run_training(
     seed: int = 42,
     train_batch_size: int = 200,
     max_steps: int = 50,
+    randomize_shock: bool = True,
 ) -> str:
     """
     Build and run a short PPO training loop.
@@ -110,6 +111,10 @@ def run_training(
         that actually learn something.
     max_steps : int
         Episode horizon used in the training env (the live stream uses 30).
+    randomize_shock : bool
+        Sample a fresh random scenario shock every episode (economy mode) so the
+        policies learn to respond to shocks. False trains in the original
+        shock-free environment.
 
     Returns
     -------
@@ -153,6 +158,7 @@ def run_training(
         "personas": personas,
         "max_steps": max_steps,
         "seed": seed,
+        "randomize_shock": randomize_shock,
     }
     register_env(
         "ecosim_v0",
@@ -244,6 +250,8 @@ if __name__ == "__main__":
     parser.add_argument("--train-batch-size", type=int, default=200,
                         help="Env steps per iteration (try 2000 for a real run).")
     parser.add_argument("--max-steps", type=int, default=50, help="Training episode horizon.")
+    parser.add_argument("--no-shock", action="store_true",
+                        help="Train without scenario shocks (original environment).")
     args = parser.parse_args()
 
     if args.output_dir is None:
@@ -258,5 +266,6 @@ if __name__ == "__main__":
         seed=args.seed,
         train_batch_size=args.train_batch_size,
         max_steps=args.max_steps,
+        randomize_shock=not args.no_shock,
     )
     print(f"Done. Checkpoint at: {path}")
