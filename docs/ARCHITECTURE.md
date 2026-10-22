@@ -19,6 +19,42 @@ This spec is written to be handed directly to an agentic coding tool, module by 
 
 ---
 
+## 0.1 Current state (23 October 2026)
+
+**What the product is now.** A town of 20 LLM "generative agents" (§7.6) living in a pixel-art Indian town. A shock (a preset, or a scenario the user describes and edits as a chain of events, §7.9) is turned into numbers and rules the code enforces; the residents perceive, remember, decide, act, talk and reflect each simulated day; the results are read on a Dashboard (§7.10), checked against published figures in Validation mode (§11.1) and carried between runs as lessons (§7.8). The RL personas of §7.2 are kept only as a baseline.
+
+**Layers, top to bottom.**
+
+| Layer | What | Where |
+|---|---|---|
+| Frontend | React 18 + Vite: Home, Dashboard, Agent profiles, Event propagation, Validation, Recent runs, live town view | `frontend/src/` |
+| API | FastAPI: REST for runs, scenarios, propagation, dashboard, validation; WebSocket for the live and replayed event stream | `backend/app/api/endpoints/` (`town.py`, `propagation.py`, `scenarios.py`) |
+| Town engine | Economy rules, shocks, 20 resident agents, daily loop, rewards and lessons | `backend/town/` |
+| LLM pool | Groq, Cerebras, Gemini, Mistral, OpenRouter, Ollama, with per-key budgets and fallback; an offline `MockBrain` for tests | `backend/town/llm_pool.py`, `brain.py` |
+| Storage | PostgreSQL or SQLite (experience, lessons, trust, scenarios), Qdrant (agent memory, in-process fallback), run logs as JSONL | `backend/town/experience.py`, `memory.py`, `backend/runs/` |
+
+**Pages and the section that explains each.** Home and live view §7.6, scenarios §7.7, Agent profiles §7.7 and §7.8, Event propagation §7.9, Dashboard §7.10, Validation §11.1.
+
+**Run it.** `./start.sh` starts the backend and the frontend (new backend endpoints need a restart); `docker compose up` starts PostgreSQL and Qdrant. Keys go in `.env` (never committed). Offline, with no keys, everything runs on the mock brain.
+
+**What has been measured, and what has not.**
+
+| Claim | Evidence | Status |
+|---|---|---|
+| Experience helps in a hard scenario | Offline brain, lockdown: summed town reward -22.9 to -9.0 after one month (`test_experience_improves_a_hard_scenario`) | Measured, mock brain only |
+| The town reproduces real shocks | COVID-2020 scorecard 42% (2 close, 1 roughly, 3 off); COVID-2021 0% (§11.1) | Measured, mock brain only |
+| LLM agents improve with experience | No run compares *Fresh* and *Learn* with a real LLM | Not measured |
+| Real-LLM validation | No validation or Dashboard run has been made with a real LLM | Not tested |
+| Cost of a real run | About 20 calls, ~31K tokens and 75 s to 2 min per simulated day for 20 agents (§7.6) | Measured |
+
+**Known limits.** One run at a time (all runs share the same API keys), so runs cannot be compared side by side live; a lockdown is all-or-nothing, so partial restrictions are not modelled; credit assignment for lessons is crude (§7.8); with 20 residents one person is 5 points of any percentage; populations of 30 or more fail in `generate_population`.
+
+**Next steps, in order of value.** (1) Run the COVID-2020 validation and a *Fresh* versus *Learn* pair with the real LLM, and record the numbers in §11.1 and §7.8. (2) Add a partial-lockdown rule so the 2021 wave can be tested fairly. (3) A compare view that overlays two saved runs on the Dashboard (saved runs make this a read-only feature, with no need for parallel live runs).
+
+**Tests.** Backend: `pytest backend/tests` (town, scenarios, learning, propagation, dashboard, validation, shock dynamics). Frontend: `node frontend/src/chainLayout.test.mjs`. Tests that need the database use a throwaway SQLite file (`tests/conftest.py`).
+
+---
+
 ## 1. Why this isn't "a chatbot with a dashboard"
 
 The four things you asked for that separate this from a typical student MAS project:
@@ -282,7 +318,7 @@ Agents with nothing new skip the LLM and follow yesterday's routine (re-planning
 
 **Frontend.** `DashboardPage.jsx` (page, run picker, tiles, residents), `DashCharts.jsx` (line chart, sparkline, status bar), `dashboard.css`. Chart colours come from a fixed, colour-blind-checked set of four per theme; status is always an icon shape plus a label, never colour alone.
 
-**Limits.** Charts show per-day town totals, not per-resident paths (the sparkline covers cash only).
+**Limits.** Charts show per-day town totals, not per-resident paths (the sparkline covers cash only). A run can be opened from Validation ("Open in Dashboard") and a validation run has an "Open scorecard" button on the Dashboard; two runs cannot yet be overlaid.
 
 ## 8. Prompts
 
@@ -677,6 +713,8 @@ Sidebar → *Validation*. The page has two ways in and one scorecard.
 
 **Scorecard** (`town/validation.py`, `GET /town/runs/{id}/validation`). Five measures are computed from the run's event log: workers without work, residents short of food, residents who borrowed informally, change in casual workers' earnings, change in household spending. Each is taken for the group the real survey covered (all residents, lower-income residents, or daily-wage and self-employed residents). The town drifts a little even with no shock (people stock up on day 1, pay arrives on set days), so the same days are also run with no shock on the offline brain, in memory and never saved, and the **difference** is what is compared. Each figure is then judged against a tolerance band: *close* inside the larger of 7.5 points and 25% of the real figure; *roughly* up to twice that away and moving the same way; *off* otherwise. The event's match score is the share of its figures that are close (1) or roughly right (0.5).
 
+**What the first scorecards showed (offline mock brain, 22 October 2026).** COVID-2020, 30 days, six figures: *close* on informal borrowing (40 against 37 real) and household spending (-33.6 against -26.7); *roughly* on casual workers losing work (100 against 67); *off* on the overall rise in joblessness (+47.1 against +14.8 points, because every non-essential worker loses the day under an all-or-nothing lockdown), on residents short of food (30 against 74) and on casual workers' earnings (-100 against -47). Match score 42%. COVID-2021 scores 0% for the same reason: the real 2021 restrictions were partial. These are results of the model with a rule-based brain; the language-model brain has not been run through validation yet, and nothing was tuned to move these numbers.
+
 **What this is not.** Nothing in the town is tuned against these figures. A low score is a finding about the model (for example, its lockdown is all-or-nothing, so it loses more work than the partial restrictions of 2021 did), not something to hide. With 20 residents one person is 5 points, so the claim is "around the real figure", never "equal". The no-shock control uses the offline brain even when the event run used the language model. Spending is in rupees, not adjusted for price changes.
 
 **Endpoints.** `GET /town/validation/events`, `POST /town/validation/run`, `GET /town/validation/runs`, `GET /town/runs/{id}/validation`. Tests: `tests/test_validation.py`. Frontend: `ValidationPage.jsx`, `validation.css`.
@@ -684,6 +722,8 @@ Sidebar → *Validation*. The page has two ways in and one scorecard.
 ---
 
 ## 12. Suggested build order (solo, tool-agnostic)
+
+> **Status (23 October 2026).** This table is the original plan, written when the live simulation was RL agents. The live simulation is now the town of LLM agents (§7.6 to §7.10) and Validation mode is built (§11.1); see §0.1 for the current state. Rows 4, 5 and 8 describe the RL baseline, which is kept but not part of the main flow.
 
 You're building this alone, so drop the multi-owner framing — one module at a time, one tool session at a time. The "needs live keys?" column matters most right now: build the No-rows first and stub the Yes-rows with fixture data, so you're never blocked waiting on an API key.
 
